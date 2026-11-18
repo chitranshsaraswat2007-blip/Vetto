@@ -15,7 +15,8 @@ export type RegistrationField =
   | "fullName"
   | "email"
   | "password"
-  | "confirmPassword";
+  | "confirmPassword"
+  | "role";
 
 export type RegisterState = {
   error?: string;

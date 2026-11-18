@@ -19,8 +19,10 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/form";
+import { Input, Label, Select } from "@/components/ui/form";
 import { loginAction, registerAction } from "@/lib/auth/actions";
+import { roleDescriptions, roleLabels } from "@/lib/auth/permissions";
+import { signupRoles } from "@/lib/users/types";
 import type {
   LoginState,
   RegisterState,
@@ -384,6 +386,7 @@ function SignUpForm() {
     email: "",
     password: "",
     confirmPassword: "",
+    role: "CREATOR",
   });
   const [touched, setTouched] = useState<Partial<Record<RegistrationField, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -401,7 +404,7 @@ function SignUpForm() {
     previousStateRef.current = state;
 
     const firstInvalid = (
-      ["fullName", "email", "password", "confirmPassword"] as const
+      ["fullName", "email", "password", "confirmPassword", "role"] as const
     ).find((field) => state.fieldErrors?.[field]);
 
     if (firstInvalid) {
@@ -451,7 +454,7 @@ function SignUpForm() {
       event.preventDefault();
 
       const firstInvalid = (
-        ["fullName", "email", "password", "confirmPassword"] as const
+        ["fullName", "email", "password", "confirmPassword", "role"] as const
       ).find((field) => clientErrors[field]);
 
       if (firstInvalid) {
@@ -529,6 +532,31 @@ function SignUpForm() {
 
       <div>
         <Label
+          htmlFor={`${formId}-role`}
+          className="text-[10px] uppercase tracking-[0.14em]"
+        >
+          Create account as
+        </Label>
+        <Select
+          id={`${formId}-role`}
+          name="role"
+          value={values.role}
+          onChange={(event) => updateField("role", event.target.value)}
+          className="h-11 rounded-lg text-base sm:text-sm"
+        >
+          {signupRoles.map((role) => (
+            <option key={role} value={role}>
+              {roleLabels[role]}
+            </option>
+          ))}
+        </Select>
+        <p className="mt-1.5 text-[11px] leading-5 text-ink-muted">
+          {roleDescriptions[values.role as keyof typeof roleDescriptions]}
+        </p>
+      </div>
+
+      <div>
+        <Label
           htmlFor={`${formId}-password`}
           className="text-[10px] uppercase tracking-[0.14em]"
         >
@@ -592,8 +620,7 @@ function SignUpForm() {
           className="mt-0.5 size-4 shrink-0 text-success"
         />
         <p className="text-[11px] leading-5 text-ink-soft">
-          <span className="font-medium text-ink">Creator access</span> is
-          assigned automatically. A manager can change your role later.
+          Your account will be created with the selected role.
         </p>
       </div>
 
@@ -670,7 +697,7 @@ export function AuthPanel({
       <p className="mt-2 max-w-sm text-sm leading-6 text-ink-soft">
         {isSignIn
           ? "Sign in to keep your brand work moving."
-          : "Start as a Creator and put every asset through a sharper review."}
+          : "Choose your role and put every asset through a sharper review."}
       </p>
 
       <div

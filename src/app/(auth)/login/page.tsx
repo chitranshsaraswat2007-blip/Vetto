@@ -95,7 +95,9 @@ export default function LoginPage() {
           <div className="entry-proof"><span>01</span><span>Brand memory</span><i /> <span>02</span><span>Human judgment</span></div>
           <BrandMark href="/login" className="mt-auto hidden w-fit opacity-75 sm:block" />
         </div>
-        <div className="login-entry-panel" data-scroll-reveal><LoginClient /></div>
+        <div className="login-entry-panel" data-scroll-reveal>
+          <LoginClient />
+        </div>
       </section>
 
       <footer className="login-footer">

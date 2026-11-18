@@ -13,6 +13,7 @@ import type {
   RegistrationField,
 } from "@/lib/auth/types";
 import { db } from "@/lib/db";
+import { signupRoles } from "@/lib/users/types";
 import {
   consumeRateLimit,
   getRequestAddress,
@@ -51,6 +52,7 @@ const registerSchema = z
         "Password must be 72 bytes or fewer.",
       ),
     confirmPassword: z.string().min(1, "Confirm your password."),
+    role: z.enum(signupRoles),
   })
   .refine((values) => values.password === values.confirmPassword, {
     path: ["confirmPassword"],
@@ -62,6 +64,7 @@ const registrationFields = new Set<RegistrationField>([
   "email",
   "password",
   "confirmPassword",
+  "role",
 ]);
 
 function requestEmailKey(formData: FormData) {
@@ -160,6 +163,7 @@ export async function registerAction(
     email: formData.get("email"),
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
+    role: formData.get("role"),
   });
 
   if (!parsed.success) {
@@ -189,7 +193,7 @@ export async function registerAction(
         name: parsed.data.fullName,
         email: parsed.data.email,
         passwordHash,
-        role: "CREATOR",
+        role: parsed.data.role,
       },
       select: { id: true, role: true },
     });

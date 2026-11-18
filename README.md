@@ -125,9 +125,11 @@ node scripts/create-large-fixtures.mjs
 
 The generated files are written to `.vetto-qa/fixtures/`, which is git-ignored so test data does not inflate the repository. The fixtures contain fabricated Aurelia campaign copy and random filler; do not treat the results as real brand assessments.
 
-### Demo accounts
+### Demo accounts and judge access
 
-Development seed accounts use the password `Vetto!Dev123` (override with `SEED_PASSWORD`). The demo seed refuses to run in production unless `VETTO_ALLOW_DEMO_SEED_IN_PRODUCTION=true` and a custom `SEED_PASSWORD` of at least 16 characters are explicitly set. Avoid demo seed accounts in a public production workspace.
+Public sign-up always creates a Creator account. For an isolated hackathon/demo deployment, you can enable the **Judge demo** controls on `/login`; judges select Creator, Manager, Supervisor, or Admin and enter without a password. Set `VETTO_DEMO_ACCESS_ENABLED=true` in the hosting environment to show the controls. It is off by default.
+
+**Security:** anyone who can reach a deployment with this flag enabled can enter all four seeded roles, including Admin. Use a separate demo database and storage bucket containing only fictional/demo data. Do not enable this on a workspace with real users or customer data. Turn the flag off after judging. Demo access requires the four seed accounts below to exist; run the production seed with `VETTO_ALLOW_DEMO_SEED_IN_PRODUCTION=true` and a custom `SEED_PASSWORD` of at least 16 characters. The seed password is still required to create/reset the accounts but judges do not need it.
 
 | Email               | Role    | Purpose                                      |
 | ------------------- | ------- | -------------------------------------------- |
@@ -135,6 +137,8 @@ Development seed accounts use the password `Vetto!Dev123` (override with `SEED_P
 | `manager@vetto.test`| MANAGER | Approve content or request changes           |
 | `supervisor@vetto.test` | SUPERVISOR | Review Manager-approved content assigned to them and triage its findings |
 | `creator@vetto.test`| CREATOR | Upload, analyze, and submit content          |
+
+With judge demo access enabled, the role cards on `/login` choose the role for the **Explore as …** button. This creates a normal server-side session for that seeded demo account; server authorization remains active. Demo users share the same demo records, so actions can change what the next judge sees. Re-run the demo seed to restore seeded accounts and brand configuration (it does not guarantee removal of all uploaded/test records).
 
 ### Role and data-access matrix
 

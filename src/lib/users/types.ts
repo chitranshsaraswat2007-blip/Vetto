@@ -7,3 +7,5 @@ export const initialUserActionState: UserActionState = {};
 
 export const appRoles = ["CREATOR", "SUPERVISOR", "MANAGER", "ADMIN"] as const;
 export type AppRoleValue = (typeof appRoles)[number];
+
+export const signupRoles = appRoles;
