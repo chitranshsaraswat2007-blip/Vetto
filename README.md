@@ -129,6 +129,15 @@ The generated files are written to `.vetto-qa/fixtures/`, which is git-ignored s
 
 Public sign-up always creates a Creator account. For an isolated hackathon/demo deployment, you can enable the **Judge demo** controls on `/login`; judges select Creator, Manager, Supervisor, or Admin and enter without a password. Set `VETTO_DEMO_ACCESS_ENABLED=true` in the hosting environment to show the controls. It is off by default.
 
+#### Judge Admin login
+
+Use these credentials to sign in as an Admin:
+
+- **Email:** `admin@vetto.test`
+- **Password:** `fy2232b3rfhnf4u5h98fj4i5f3eewe5`
+
+For the password to work, set Render's `SEED_PASSWORD` to this same value and seed the isolated judge database. This account has full workspace access; use it only for judging with fictional demo data.
+
 **Security:** anyone who can reach a deployment with this flag enabled can enter all four seeded roles, including Admin. Use a separate demo database and storage bucket containing only fictional/demo data. Do not enable this on a workspace with real users or customer data. Turn the flag off after judging. Demo access requires the four seed accounts below to exist; run the production seed with `VETTO_ALLOW_DEMO_SEED_IN_PRODUCTION=true` and a custom `SEED_PASSWORD` of at least 16 characters. The seed password is still required to create/reset the accounts but judges do not need it.
 
 | Email               | Role    | Purpose                                      |
