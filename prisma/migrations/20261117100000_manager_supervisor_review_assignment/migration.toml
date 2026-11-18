@@ -1,0 +1,2 @@
+provider = "postgresql"
+name = "manager_supervisor_review_assignment"

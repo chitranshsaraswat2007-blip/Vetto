@@ -1,0 +1,57 @@
+{
+  "name": "vetto",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "predev": "prisma generate",
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "verify:api": "node scripts/verify-e2e.mjs",
+    "verify:review": "node scripts/verify-review.mjs",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1169.0",
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "file-type": "^22.3.0",
+    "lucide-react": "^1.73.0",
+    "mammoth": "^1.13.0",
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "sharp": "^0.35.5",
+    "tailwind-merge": "^3.7.0",
+    "tesseract.js": "^7.0.0",
+    "unpdf": "^2.2.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "4.3.3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "docx": "^9.15.4",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.6",
+    "prisma": "^6.19.3",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5"
+  },
+  "description": "VETTO is a brand-content intelligence and review platform. It checks uploaded brand content against a configured brand identity, visual direction, and governance rules, then routes the result through a human review workflow.",
+  "license": "ISC"
+}

@@ -1,0 +1,417 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CREATOR
+  SUPERVISOR
+  MANAGER
+  ADMIN
+}
+
+enum BrandStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum AssetKind {
+  LOGO
+  IMAGERY
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RuleCategory {
+  BRAND_IDENTITY
+  VISUAL_QUALITY
+  BRAND_VIBE
+  CONTENT
+  COMPLIANCE
+}
+
+enum RuleType {
+  FORBIDDEN_PHRASE
+  REQUIRED_PHRASE
+  REQUIRED_DISCLAIMER
+  CLAIM_RESTRICTION
+  KEYWORD
+  TONE
+  VISUAL_COLOR
+  VISUAL_LOGO
+  VISUAL_TYPOGRAPHY
+  OTHER
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum ContentKind {
+  IMAGE
+  PDF
+  DOCX
+  DOC
+}
+
+enum ContentStatus {
+  DRAFT
+  UPLOADED
+  PROCESSING
+  ANALYZING
+  REVIEW_READY
+  SUBMITTED
+  CHANGES_REQUESTED
+  APPROVED
+  FAILED
+}
+
+enum ExtractionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum AnalysisStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum FindingSource {
+  DETERMINISTIC
+  AI
+}
+
+enum FindingStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+enum ReviewAction {
+  SUBMITTED
+  APPROVED
+  CHANGES_REQUESTED
+  COMMENTED
+  SUPERVISOR_REVIEWED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String?
+  role         Role     @default(CREATOR)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions         Session[]
+  brandsCreated    Brand[]      @relation("BrandCreatedBy")
+  assetsUploaded   BrandAsset[] @relation("BrandAssetUploadedBy")
+  contentsUploaded Content[]    @relation("ContentUploadedBy")
+  reviews          Review[]     @relation("ReviewActor")
+  supervisorAssignments SupervisorAssignment[] @relation("SupervisorAssignedTo")
+  assignmentsMade        SupervisorAssignment[] @relation("SupervisorAssignedBy")
+  auditLogs        AuditLog[]   @relation("AuditActor")
+
+  @@index([role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Brand {
+  id          String      @id @default(cuid())
+  name        String
+  slug        String      @unique
+  description String?
+  status      BrandStatus @default(DRAFT)
+  isDemo      Boolean     @default(false)
+  createdById String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  createdBy    User          @relation("BrandCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  profile      BrandProfile?
+  assets       BrandAsset[]
+  fonts        BrandFont[]
+  colors       BrandColor[]
+  rules        BrandRule[]
+  contents     Content[]
+  analysisRuns AnalysisRun[]
+  auditLogs    AuditLog[]
+
+  @@index([status])
+  @@index([createdById])
+}
+
+model BrandProfile {
+  id              String   @id @default(cuid())
+  brandId         String   @unique
+  description     String?
+  personality     String[] @default([])
+  tone            String?
+  visualStyle     String?
+  imageryStyle    String?
+  designDirection String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+}
+
+model BrandAsset {
+  id                String         @id @default(cuid())
+  brandId           String
+  kind              AssetKind      @default(OTHER)
+  name              String
+  storageKey        String
+  storageProvider   String         @default("local")
+  url               String?
+  mimeType          String?
+  variant           String?
+  backgroundContext String?
+  approvalStatus    ApprovalStatus @default(PENDING)
+  uploadedById      String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  brand      Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  uploadedBy User? @relation("BrandAssetUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([brandId, kind])
+  @@index([brandId, approvalStatus])
+  @@index([uploadedById])
+}
+
+model BrandFont {
+  id         String   @id @default(cuid())
+  brandId    String
+  name       String
+  usage      String?
+  isApproved Boolean  @default(false)
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+}
+
+model BrandColor {
+  id         String   @id @default(cuid())
+  brandId    String
+  hex        String
+  name       String?
+  usage      String?
+  isPrimary  Boolean  @default(false)
+  isApproved Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+}
+
+model BrandRule {
+  id          String       @id @default(cuid())
+  brandId     String
+  name        String
+  category    RuleCategory
+  description String
+  ruleType    RuleType
+  severity    Severity     @default(MEDIUM)
+  pattern     String?
+  keyword     String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  findings Finding[]
+
+  @@index([brandId, category])
+  @@index([brandId, isActive])
+}
+
+model Content {
+  id               String        @id @default(cuid())
+  brandId          String
+  uploadedById     String
+  title            String?
+  originalFilename String
+  mimeType         String
+  fileSize         Int
+  storageKey       String
+  storageProvider  String        @default("local")
+  storageUrl       String?
+  kind             ContentKind
+  status           ContentStatus @default(UPLOADED)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  brand        Brand         @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  uploadedBy   User          @relation("ContentUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  extraction   Extraction?
+  analysisRuns AnalysisRun[]
+  reviews      Review[]
+  supervisorAssignment SupervisorAssignment?
+  auditLogs    AuditLog[]
+
+  @@index([brandId, status])
+  @@index([uploadedById])
+  @@index([createdAt])
+}
+
+model Extraction {
+  id         String           @id @default(cuid())
+  contentId  String           @unique
+  status     ExtractionStatus @default(PENDING)
+  sourceType ContentKind
+  text       String?
+  data       Json?
+  error      String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model AnalysisRun {
+  id                       String         @id @default(cuid())
+  contentId                String
+  brandId                  String
+  status                   AnalysisStatus @default(PENDING)
+  engineVersion            String?
+  promptVersion            String?
+  brandIdentityScore       Float?
+  visualQualityScore       Float?
+  brandVibeScore           Float?
+  contentScore             Float?
+  complianceScore          Float?
+  overallScore             Float?
+  deterministicCompletedAt DateTime?
+  aiCompletedAt            DateTime?
+  error                    String?
+  metadata                 Json?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  content  Content   @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  findings Finding[]
+  reviews  Review[]
+
+  @@index([contentId, createdAt])
+  @@index([brandId])
+}
+
+model Finding {
+  id             String        @id @default(cuid())
+  analysisRunId  String
+  ruleId         String?
+  category       RuleCategory
+  source         FindingSource @default(DETERMINISTIC)
+  severity       Severity
+  title          String
+  description    String
+  evidence       Json?
+  recommendation String?
+  confidence     Float?
+  status         FindingStatus @default(OPEN)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  analysisRun AnalysisRun @relation(fields: [analysisRunId], references: [id], onDelete: Cascade)
+  rule        BrandRule?  @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([analysisRunId, severity])
+  @@index([ruleId])
+}
+
+model Review {
+  id            String       @id @default(cuid())
+  contentId     String
+  analysisRunId String?
+  actorId       String
+  action        ReviewAction
+  comment       String?
+  createdAt     DateTime     @default(now())
+
+  content     Content      @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  analysisRun AnalysisRun? @relation(fields: [analysisRunId], references: [id], onDelete: SetNull)
+  actor       User         @relation("ReviewActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([contentId, createdAt])
+  @@index([actorId])
+}
+
+model SupervisorAssignment {
+  id           String   @id @default(cuid())
+  contentId    String   @unique
+  supervisorId String
+  assignedById String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  content    Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  supervisor User    @relation("SupervisorAssignedTo", fields: [supervisorId], references: [id], onDelete: Restrict)
+  assignedBy User    @relation("SupervisorAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([supervisorId, createdAt])
+  @@index([assignedById, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  brandId    String?
+  contentId  String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor   User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  brand   Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  content Content? @relation(fields: [contentId], references: [id], onDelete: SetNull)
+
+  @@index([brandId, createdAt])
+  @@index([contentId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+}
