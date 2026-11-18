@@ -93,6 +93,20 @@ export default function LoginPage() {
           <h2 id="entry-title">The next move<br /><em>is yours.</em></h2>
           <p>Choose your role, sign in, and pick up exactly where the work needs you.</p>
           <div className="entry-proof"><span>01</span><span>Brand memory</span><i /> <span>02</span><span>Human judgment</span></div>
+          <aside className="mt-7 max-w-md rounded-xl border border-line bg-surface/70 p-4" aria-label="Judge demo login">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Demo use for judges</p>
+            <dl className="mt-3 space-y-2 text-sm">
+              <div>
+                <dt className="text-[11px] text-ink-muted">Admin email</dt>
+                <dd className="font-medium text-ink">admin@vetto.test</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] text-ink-muted">Password</dt>
+                <dd className="break-all font-mono text-xs text-ink">fy2232b3rfhnf4u5h98fj4i5f3eewe5</dd>
+              </div>
+            </dl>
+            <p className="mt-3 text-[11px] leading-5 text-ink-muted">Shared demo account for evaluation only.</p>
+          </aside>
           <BrandMark href="/login" className="mt-auto hidden w-fit opacity-75 sm:block" />
         </div>
         <div className="login-entry-panel" data-scroll-reveal>
