@@ -21,14 +21,6 @@ const nextConfig: NextConfig = {
     "tesseract.js",
     "unpdf",
   ],
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
   async headers() {
     return [
       {
