@@ -39,6 +39,8 @@ export default async function SupervisorHomePage() {
     recentlyFlagged,
     assignedFindingStatuses,
     secondaryReviewsThisWeek,
+    openEscalations,
+    openEscalationCount,
   ] = await Promise.all([
     db.finding.findMany({
       where: {
@@ -103,9 +105,27 @@ export default async function SupervisorHomePage() {
       where: { actorId: user.id, action: "SUPERVISOR_REVIEWED", createdAt: { gte: weekStartUtc() } },
       select: { createdAt: true },
     }),
+    db.supervisorEscalation.findMany({
+      where: { supervisorId: user.id, status: "OPEN", content: { status: "SUBMITTED" } },
+      orderBy: { createdAt: "asc" },
+      take: 5,
+      include: {
+        raisedBy: { select: { name: true } },
+        content: { select: { id: true, title: true, originalFilename: true, brand: { select: { name: true } } } },
+      },
+    }),
+    db.supervisorEscalation.count({
+      where: { supervisorId: user.id, status: "OPEN", content: { status: "SUBMITTED" } },
+    }),
   ]);
 
   const stats = [
+    {
+      label: "Open Escalations",
+      value: openEscalationCount,
+      hint: "Manager questions waiting for your assessment",
+      href: "/reviews?status=SUBMITTED",
+    },
     {
       label: "Block-Severity Findings",
       value: highSeverityCount,
@@ -131,10 +151,10 @@ export default async function SupervisorHomePage() {
       <PageHeader
         eyebrow="Supervisor"
         title="Findings Triage"
-        description="Review only manager-approved items assigned to you, add your independent assessment, and triage their findings."
+        description="Resolve Manager escalations and review approved items assigned to you, with the evidence and review history attached."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
           <Link key={stat.label} href={stat.href} className="group">
             <Card className="dashboard-stat-card h-full min-w-0 p-5 transition-all group-hover:-translate-y-1 group-hover:shadow-raised">
@@ -151,6 +171,33 @@ export default async function SupervisorHomePage() {
           </Link>
         ))}
       </div>
+
+      {openEscalations.length > 0 ? (
+        <Card className="mt-6 min-w-0">
+          <CardHeader>
+            <CardTitle>Manager escalations</CardTitle>
+            <CardDescription>
+              Add an independent assessment. The Manager’s decision resumes after you respond.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-line">
+              {openEscalations.map((escalation) => (
+                <li key={escalation.id} className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-ink">{escalation.content.title ?? escalation.content.originalFilename}</p>
+                    <p className="mt-1 truncate text-[10px] text-ink-muted">{escalation.content.brand.name} · asked by {escalation.raisedBy.name}</p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-ink-soft">{escalation.question}</p>
+                  </div>
+                  <Link href={`/content/${escalation.content.id}`} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent hover:text-accent-strong">
+                    Review question <ArrowRight aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="mt-6 grid gap-4 xl:grid-cols-2">
         <StatusDonut

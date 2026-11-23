@@ -4,18 +4,18 @@ VETTO is a brand-content intelligence and review platform. It checks uploaded co
 
 ## Current status
 
-Phases 1-9 are implemented. On 2026-11-18, `scripts/run-qa.ps1` passed on Node 24.17.0 against an isolated PostgreSQL 18 QA database: `npm run lint`, `npm run typecheck`, `npm run build`, 27 API checks, and 12 browser workflow checks. The run covered role access, Manager-to-Supervisor assignment, review history, audit logging, malformed AI output, provider outage, unsupported and oversized uploads, and file access controls. Four generated files (3.77-6.20 MiB) completed upload, extraction, and analysis in 0.7-4.2 seconds per file. The configured local PostgreSQL database was also migrated and queried successfully with the SupervisorAssignment relation. AI validation and provider failure were tested with a local mock, not a live AI provider. Deployment is still blocked on production credentials and a Git remote; see [Deployment status](#deployment-status).
+VETTO is being prepared for the Round 3 evaluation. The promised improvements are evidence-gated AI claim/tone review, Manager-to-Supervisor escalation, and an Admin rule-clarity signal. OCR for scanned PDF pages, available font metadata matching, email verification, and password reset are also implemented. Deployment and live-provider behavior must be verified against the current build before claiming those checks pass. The Windows QA harness runs isolated lint, typecheck, production build, API, upload, and browser workflow checks against a temporary database; see [Verification](#verification).
 
 - **Foundation:** Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4, PostgreSQL + Prisma, responsive editorial shell, security headers.
-- **Auth and roles:** database-backed sessions with HttpOnly cookies, server-enforced permissions, seeded Creator/Supervisor/Manager/Admin accounts, **fully functional registration with Creator role assignment**, admin user management (create, change role, deactivate), server-side validation, rate limiting, and audit logging. No email verification or password recovery (documented limitation).
+- **Auth and roles:** database-backed sessions with HttpOnly cookies, server-enforced permissions, Creator-only public registration, email verification, password reset, seeded Creator/Supervisor/Manager/Admin accounts, Admin user management (create, change role, deactivate), server-side validation, rate limiting, and audit logging.
 - **Brand identity:** original split-V symbol with copper accent, custom monoline VETTO wordmark, full lockup and app-icon system; used consistently across UI, favicon, and Apple touch icon.
 - **Authentication experience:** cinematic 1.7s intro (logo → tagline → glass panel), Apple-style glassmorphism, warm neutral palette, reduced-motion support, animated form height switching between Sign In and Create Account.
 - **Brand intelligence:** create/edit brands, profile, approved palette, fonts, assets, and rule configuration with audit history.
 - **Uploads and storage:** validated image/PDF/DOCX intake, magic-byte detection, private local or S3-compatible storage, authenticated file delivery.
 - **Extraction:** Sharp image metadata and palette extraction, Tesseract OCR with word evidence, unpdf text extraction, mammoth DOCX extraction.
-- **Analysis:** deterministic brand-rule checks, visual quality checks, palette alignment, heuristic logo matching, optional AI reasoning, weighted scores, findings with evidence and limitations.
-- **Review workflow:** submit for review, approve, request changes, comments, finding triage (open/acknowledged/resolved/dismissed), review timeline, and audit records.
-- **Operations:** live health endpoint, system-readiness panel, role-aware dashboards and queues, demo seed data.
+- **Analysis:** deterministic brand-rule checks, visual quality checks, palette alignment, heuristic logo matching, optional AI claim/tone reasoning tied to an active rule and an exact extracted quote, weighted scores, findings with evidence and limitations.
+- **Review workflow:** submit for review, approve, request changes, Manager escalation to an assigned Supervisor, Supervisor decision returned to the Manager, comments, finding triage (open/acknowledged/resolved/dismissed), review timeline, and audit records.
+- **Operations:** live health endpoint, system-readiness panel, role-aware dashboards and queues, an Admin signal for repeatedly waived rules, and demo seed data.
 
 ## Stack
 
@@ -127,7 +127,7 @@ The generated files are written to `.vetto-qa/fixtures/`, which is git-ignored s
 
 ### Demo accounts and judge access
 
-Public sign-up always creates a Creator account. For an isolated hackathon/demo deployment, you can enable the **Judge demo** controls on `/login`; judges select Creator, Manager, Supervisor, or Admin and enter without a password. Set `VETTO_DEMO_ACCESS_ENABLED=true` in the hosting environment to show the controls. It is off by default.
+Public sign-up creates Creator accounts only. Admins can assign Supervisor, Manager, or Admin access from user management. The login page's role cards identify which account the user intends to use; the role is loaded from the authenticated database account.
 
 #### Judge Admin login
 
@@ -138,7 +138,7 @@ Use these credentials to sign in as an Admin:
 
 For the password to work, set Render's `SEED_PASSWORD` to this same value and seed the isolated judge database. This account has full workspace access; use it only for judging with fictional demo data.
 
-**Security:** anyone who can reach a deployment with this flag enabled can enter all four seeded roles, including Admin. Use a separate demo database and storage bucket containing only fictional/demo data. Do not enable this on a workspace with real users or customer data. Turn the flag off after judging. Demo access requires the four seed accounts below to exist; run the production seed with `VETTO_ALLOW_DEMO_SEED_IN_PRODUCTION=true` and a custom `SEED_PASSWORD` of at least 16 characters. The seed password is still required to create/reset the accounts but judges do not need it.
+**Security:** public registration cannot assign elevated roles. Use a separate demo database and storage bucket containing fictional/demo data; never use demo credentials for real customer data. For the seeded judge account, run the production seed with `VETTO_ALLOW_DEMO_SEED_IN_PRODUCTION=true` and a custom `SEED_PASSWORD` of at least 16 characters. Seeding resets demo accounts and brand configuration.
 
 | Email               | Role    | Purpose                                      |
 | ------------------- | ------- | -------------------------------------------- |
@@ -147,7 +147,7 @@ For the password to work, set Render's `SEED_PASSWORD` to this same value and se
 | `supervisor@vetto.test` | SUPERVISOR | Review Manager-approved content assigned to them and triage its findings |
 | `creator@vetto.test`| CREATOR | Upload, analyze, and submit content          |
 
-With judge demo access enabled, the role cards on `/login` choose the role for the **Explore as …** button. This creates a normal server-side session for that seeded demo account; server authorization remains active. Demo users share the same demo records, so actions can change what the next judge sees. Re-run the demo seed to restore seeded accounts and brand configuration (it does not guarantee removal of all uploaded/test records).
+Demo users share the same records, so their actions can change what the next judge sees. Re-run the seed to restore seeded accounts and brand configuration; it does not remove all uploaded or test records.
 
 ### Role and data-access matrix
 
@@ -254,6 +254,8 @@ Names only; never commit values.
 | ----------------------- | ----------- | -------------------------------------------------------------- |
 | `DATABASE_URL`          | Yes         | PostgreSQL connection string                                   |
 | `NEXT_PUBLIC_APP_URL`   | Recommended | Canonical application URL (defaults to `http://localhost:3000`) |
+| `RESEND_API_KEY`         | Production  | Resend API key for verification and password reset email      |
+| `AUTH_EMAIL_FROM`        | Production  | Verified sender address, e.g. `VETTO <accounts@yourdomain.com>` |
 | `STORAGE_DRIVER`        | Production  | `local` (development default) or `s3`                          |
 | `S3_ENDPOINT`           | S3 only     | S3-compatible endpoint                                         |
 | `S3_REGION`             | S3 only     | Bucket region                                                  |
@@ -272,43 +274,35 @@ In production, startup configuration fails if storage is not explicitly configur
 1. The file is validated by magic bytes and stored with a private, generated key.
 2. Extraction records the source text and visual metadata:
    - Images: dimensions, dominant palette, OCR text, confidence, and word boxes.
-   - PDFs: embedded text per page.
-   - DOCX: raw document text.
-3. Deterministic checks compare extracted evidence against the brand profile and active rules: forbidden/required phrases, required disclaimers, claim patterns, keywords, palette alignment, visual quality, and approved-logo similarity.
+   - PDFs: embedded text per page, OCR for pages without usable text, and embedded font-family metadata where available.
+   - DOCX: raw document text and declared font-family metadata where available.
+3. Deterministic checks compare extracted evidence against the brand profile and active rules: forbidden/required phrases, required disclaimers, claim patterns, keywords, palette alignment, visual quality, approved-logo similarity, and available font metadata.
 4. Scores are computed per available category and renormalized using the configured weights. Missing evidence is reported as unavailable, never as a pass.
 5. If `AI_API_KEY` is configured, contextual reasoning adds low/medium-severity findings and a brand-vibe score. AI failure is recorded but never blocks deterministic results.
 6. A creator can submit review-ready content. A manager approves it or requests changes. The content is locked from processing while submitted or approved.
 
 ## Known limitations
 
-- OCR does not reliably expose font metadata, so typography matching is not scored.
+- Font matching compares embedded PDF/DOCX metadata when present. OCR/image sources often lack font metadata, so those files report font matching as unavailable.
 - Logo detection is a perceptual-hash heuristic; cropped, recolored, or composited logos can be missed and the UI says so.
 - Palette extraction is quantized and sampled by coverage; small intentional accents may appear as off-palette findings.
-- PDF extraction reads embedded text only; scanned PDFs without a text layer are not OCRed in this build.
+- Scanned PDF OCR is limited to the first 12 pages that need OCR and can be less accurate on low-resolution, skewed, or non-English pages.
+- New self-registered accounts must verify email before sign-in. Configure `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, and `NEXT_PUBLIC_APP_URL` for production verification and password reset mail. Development shows the generated verification link on screen when email delivery is not configured.
+- Password reset links expire after one hour and can be used once; completing a reset revokes all existing sessions for that account.
 - Only PNG, JPEG, WebP, PDF, and DOCX are accepted. SVG is rejected for upload safety; legacy DOC is not supported.
 - Local disk storage and background work are single-instance. Production needs object storage, and serverless platforms impose request-size limits that may require direct-to-storage uploads.
 - Reviewers are not notified by email; queues update when pages are refreshed or revalidated.
-- Supervisor assignment covers Manager-approved reviews. There is no separate escalation object or escalation workflow for findings.
+- The unclear-rule signal is heuristic: it checks each content item's latest completed analysis and flags active rules with at least three findings and two or more currently dismissed findings. It is a prompt for human review, not proof that a rule is unclear.
+- Supervisor escalations pause a submitted content decision until the assigned Supervisor responds; they do not send notifications.
 - The audit log is written for every decision, upload, and finding change, but only the review history is readable in the UI; raw audit rows are inspected through Prisma Studio or SQL.
 - A finding's method and confidence are shown with its evidence. Confidence is the engine's confidence in the match, not a probability that the content is non-compliant.
 - AI scoring depends on the configured provider and model and is optional.
-- **Authentication:** no email verification or password recovery flows exist. Accounts are active immediately after registration. Rate limiting is in-memory and single-instance; a multi-instance deployment would need a shared store (e.g., Redis).
+- Rate limiting is in-memory and single-instance; a multi-instance deployment would need a shared store (e.g., Redis).
 - **Brand assets:** the logo system uses static SVG files; dynamic recoloring is not supported beyond the provided inverted variant.
 
 ## Deployment status
 
-No public deployment exists yet, so the app has not been verified with the development laptop off. Deployment is blocked on credentials, a Git remote, and an account owner.
-
-What is ready: a passing Webpack production build, verified migrations in both the isolated QA database and the configured local PostgreSQL database, a `/api/health` endpoint that reports database connectivity, production refusal to start with unconfigured object storage, secure session cookies in production, rate limiting on sign-in and registration, and the full environment-variable list above. A production database, S3-compatible storage, and a public deployment were not available during this audit. No Git remote is configured and the project files are currently untracked, so source control setup is still required.
-
-What is required from the account owner:
-
-1. A hosting provider that can run a Next.js 16 server (not a static export) with request limits that allow 20 MB uploads and 60-second extraction/analysis requests.
-2. A managed PostgreSQL database and an S3-compatible bucket. Set `STORAGE_DRIVER=s3` plus the `S3_*` values in the host secret store, never in the repository.
-3. A Git remote, then `npm run db:deploy` against production. Use an intentional account bootstrap process; demo seeding is blocked by default in production.
-4. `NEXT_PUBLIC_APP_URL` set to the public URL so redirects and readiness checks are accurate.
-
-After deploying, repeat the two verification scripts against the public URL and confirm `/api/health` reports `"database":"connected"` before calling the project deployed.
+The project is deployed on Render. The `prestart` script runs `prisma migrate deploy` before the Next.js server starts, so pending migrations are applied during deployment. New source changes are not live until committed and deployed. Verify the health endpoint and test sign-in, verification email delivery, password reset, and one AI review after each deployment. Set `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, and the public Render URL in `NEXT_PUBLIC_APP_URL` before relying on production verification or password reset mail.
 
 ## Five-minute demo script
 
@@ -320,4 +314,4 @@ After deploying, repeat the two verification scripts against the public URL and 
 6. As Manager, assign the approved item to a Supervisor. Verify the Supervisor cannot open an unassigned item, then submit a secondary review and dismiss a finding without a reason (rejected) and with a reason (saved).
 7. Sign in as `admin@vetto.test` for **Settings** readiness and the brand rule list, then state the deployment status and known limitations plainly.
 
-Avoid claiming during the demo: font matching, scanned-PDF OCR, escalation queues, email notifications, or AI results when `AI_API_KEY` is unset.
+Avoid claiming during the demo: OCR beyond the first 12 scanned pages, typography matching for image-only/OCR files, email notifications to reviewers, or AI results when `AI_API_KEY` is unset.

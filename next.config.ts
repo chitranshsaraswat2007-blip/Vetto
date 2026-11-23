@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
     "sharp",
     "tesseract.js",
     "unpdf",
+    "@napi-rs/canvas",
   ],
   async headers() {
     return [

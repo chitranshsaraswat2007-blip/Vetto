@@ -51,12 +51,14 @@ async function seedUsers() {
           role: user.role,
           isActive: true,
           passwordHash,
+          emailVerifiedAt: new Date(),
         },
         create: {
           email: user.email,
           name: user.name,
           role: user.role,
           passwordHash,
+          emailVerifiedAt: new Date(),
         },
       }),
     );

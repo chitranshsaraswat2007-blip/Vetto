@@ -101,7 +101,12 @@ export default async function ReviewsPage({
   const allContents = await db.content.findMany({
     where: {
       ...(user.role === "SUPERVISOR"
-        ? { status: "APPROVED", supervisorAssignment: { is: { supervisorId: user.id } } }
+        ? {
+            OR: [
+              { status: "APPROVED", supervisorAssignment: { is: { supervisorId: user.id } } },
+              { status: "SUBMITTED", supervisorEscalations: { some: { supervisorId: user.id, status: "OPEN" } } },
+            ],
+          }
         : { ...(canViewAll ? {} : { uploadedById: user.id }), status: { in: [...reviewStatuses] } }),
     },
     orderBy: { updatedAt: "desc" },
@@ -122,6 +127,10 @@ export default async function ReviewsPage({
         orderBy: { createdAt: "desc" },
         take: 1,
         include: { actor: { select: { name: true } } },
+      },
+      supervisorEscalations: {
+        where: { supervisorId: user.id, status: "OPEN" },
+        include: { supervisor: { select: { name: true } } },
       },
     },
   });
@@ -184,7 +193,14 @@ export default async function ReviewsPage({
 
   const activity = await db.review.findMany({
     where: user.role === "SUPERVISOR"
-      ? { content: { status: "APPROVED", supervisorAssignment: { is: { supervisorId: user.id } } } }
+      ? {
+          content: {
+            OR: [
+              { status: "APPROVED", supervisorAssignment: { is: { supervisorId: user.id } } },
+              { status: "SUBMITTED", supervisorEscalations: { some: { supervisorId: user.id, status: "OPEN" } } },
+            ],
+          },
+        }
       : canViewAll ? undefined : { content: { uploadedById: user.id } },
     orderBy: { createdAt: "desc" },
     take: 8,
@@ -204,6 +220,9 @@ export default async function ReviewsPage({
   const awaitingDecision = allContents.filter(
     (content) => content.status === "SUBMITTED",
   );
+  const openEscalationCount = allContents.filter(
+    (content) => content.supervisorEscalations.length > 0,
+  ).length;
   const needsSubmission = allContents.filter(
     (content) =>
       content.status === "REVIEW_READY" ||
@@ -222,16 +241,18 @@ export default async function ReviewsPage({
           user.role === "MANAGER" || user.role === "ADMIN"
             ? "Submitted content waiting for a decision, plus the review history that supports every approval and change request."
             : user.role === "SUPERVISOR"
-              ? "Manager-approved content explicitly assigned to you for secondary review."
+              ? "Review Manager escalations assigned to you, plus approved items awaiting secondary review."
             : "Content you have submitted or prepared for review, with the decisions and comments recorded against it."
         }
         actions={
-          <Badge variant={awaitingDecision.length > 0 ? "accent" : "outline"}>
-            {awaitingDecision.length > 0
-              ? `${awaitingDecision.length} awaiting decision`
-              : needsSubmission.length > 0
-                ? `${needsSubmission.length} awaiting submission`
-                : "Queue clear"}
+          <Badge variant={(user.role === "SUPERVISOR" ? openEscalationCount : awaitingDecision.length) > 0 ? "accent" : "outline"}>
+            {user.role === "SUPERVISOR"
+              ? `${openEscalationCount} open escalations`
+              : awaitingDecision.length > 0
+                ? `${awaitingDecision.length} awaiting decision`
+                : needsSubmission.length > 0
+                  ? `${needsSubmission.length} awaiting submission`
+                  : "Queue clear"}
           </Badge>
         }
       />
@@ -260,7 +281,7 @@ export default async function ReviewsPage({
             filterLabel
               ? "Clear the filter to see the full review queue."
               : user.role === "SUPERVISOR"
-                ? "A Manager must approve and assign a review to you before it appears here."
+                ? "A Manager can escalate a submitted review to you or assign an approved item for secondary review."
               : canReview
                 ? "When a creator submits review-ready content, it will appear here for approval or a change request."
                 : "Upload content, let extraction and analysis finish, then submit it for a manager decision."
@@ -291,7 +312,7 @@ export default async function ReviewsPage({
                 <CardTitle>Review queue</CardTitle>
                 <CardDescription>
                   {user.role === "SUPERVISOR"
-                    ? "Only Manager-approved items assigned to you appear in this queue."
+                    ? "Manager escalations and approved items assigned for secondary review appear in this queue."
                     : canReview
                     ? "Submitted items are locked from further processing until you approve them or request changes."
                     : `${needsSubmission.length} of your items are not yet submitted. Open an item to submit it when ready.`}
@@ -310,6 +331,7 @@ export default async function ReviewsPage({
               {contents.map((content) => {
                 const latestRun = content.analysisRuns[0] ?? null;
                 const latestReview = content.reviews[0] ?? null;
+                const escalation = content.supervisorEscalations[0] ?? null;
                 const title = content.title ?? content.originalFilename;
 
                 return (
@@ -333,6 +355,7 @@ export default async function ReviewsPage({
                           {CONTENT_STATUS_LABELS[content.status] ??
                             content.status}
                         </Badge>
+                        {escalation ? <Badge variant="warning">Supervisor input pending</Badge> : null}
                       </div>
                       <p className="mt-1 truncate text-xs text-ink-muted">
                         {content.brand.name} · {content.uploadedBy.name} ·{" "}
@@ -343,6 +366,11 @@ export default async function ReviewsPage({
                           {reviewActionLabels[latestReview.action] ??
                             latestReview.action}{" "}
                           by {latestReview.actor.name}: {latestReview.comment}
+                        </p>
+                      ) : null}
+                      {escalation ? (
+                        <p className="mt-1 line-clamp-2 max-w-3xl text-[11px] leading-5 text-ink-muted">
+                          Manager’s question: {escalation.question}
                         </p>
                       ) : null}
                     </div>

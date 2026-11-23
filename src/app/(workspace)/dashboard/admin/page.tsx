@@ -1,4 +1,4 @@
-import { Users, Settings, Fingerprint, Shield } from "lucide-react";
+import { ArrowRight, Users, Settings, Fingerprint, Shield } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -35,6 +35,7 @@ export default async function AdminHomePage() {
     pendingReviews,
     recentUsers,
     usersThisWeek,
+    findingGroups,
   ] = await Promise.all([
     db.user.count(),
     db.user.groupBy({
@@ -60,6 +61,20 @@ export default async function AdminHomePage() {
       where: { createdAt: { gte: weekStartUtc() } },
       select: { createdAt: true },
     }),
+    db.$queryRaw<Array<{ ruleId: string | null; status: string; count: number }>>`
+      WITH latest_runs AS (
+        SELECT DISTINCT ON ("contentId") "id"
+        FROM "AnalysisRun"
+        WHERE "status" = 'COMPLETED'
+        ORDER BY "contentId", "createdAt" DESC
+      )
+      SELECT f."ruleId" AS "ruleId", f."status"::text AS "status", COUNT(*)::int AS "count"
+      FROM "Finding" f
+      JOIN latest_runs latest ON latest."id" = f."analysisRunId"
+      JOIN "BrandRule" rule ON rule."id" = f."ruleId" AND rule."isActive" = true
+      JOIN "Brand" brand ON brand."id" = rule."brandId" AND brand."status" = 'ACTIVE'
+      GROUP BY f."ruleId", f."status"
+    `,
   ]);
 
   const roleStats = roleCounts.reduce((acc, r) => {
@@ -93,6 +108,44 @@ export default async function AdminHomePage() {
       href: "/reviews?status=SUBMITTED",
     },
   ];
+
+  const ruleFindingTotals = new Map<string, { total: number; waived: number }>();
+  for (const group of findingGroups) {
+    if (!group.ruleId) continue;
+    const totals = ruleFindingTotals.get(group.ruleId) ?? { total: 0, waived: 0 };
+    totals.total += group.count;
+    if (group.status === "DISMISSED") totals.waived += group.count;
+    ruleFindingTotals.set(group.ruleId, totals);
+  }
+  const unclearRuleSignals = [...ruleFindingTotals.entries()]
+    .filter(([, totals]) => totals.total >= 3 && totals.waived >= 2)
+    .sort((left, right) => right[1].waived - left[1].waived || right[1].total - left[1].total);
+  const unclearRules = unclearRuleSignals.length > 0
+    ? await db.brandRule.findMany({
+        where: {
+          id: { in: unclearRuleSignals.map(([ruleId]) => ruleId) },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          brandId: true,
+          brand: { select: { name: true, status: true } },
+        },
+      })
+    : [];
+  const unclearRuleById = new Map(unclearRules.map((rule) => [rule.id, rule]));
+  const activeUnclearRules = unclearRuleSignals
+    .flatMap(([ruleId, totals]) => {
+      const rule = unclearRuleById.get(ruleId);
+      if (!rule?.brand || rule.brand.status !== "ACTIVE") return [];
+      return [{
+        ...rule,
+        ...totals,
+        waivedRate: Math.round((totals.waived / totals.total) * 100),
+      }];
+    });
+  const unclearRulesForDisplay = activeUnclearRules.slice(0, 5);
 
   return (
     <>
@@ -226,6 +279,44 @@ export default async function AdminHomePage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6 min-w-0">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Rules to review for clarity</CardTitle>
+              <CardDescription>
+                Active rules with at least three findings and two or more currently dismissed findings.
+                This is a review signal, not a conclusion that the rule is wrong.
+              </CardDescription>
+            </div>
+            <Badge variant={activeUnclearRules.length > 0 ? "warning" : "outline"}>
+              {activeUnclearRules.length} to review
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {unclearRulesForDisplay.length === 0 ? (
+            <p className="rounded-md border border-dashed border-line-strong px-4 py-6 text-center text-xs text-ink-muted">
+              No active rules meet the repeated-waiver threshold yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {unclearRulesForDisplay.map((rule) => (
+                <li key={rule.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-ink">{rule.name}</p>
+                    <p className="mt-1 text-[10px] text-ink-muted">{rule.brand.name} · {rule.waived} of {rule.total} findings waived ({rule.waivedRate}%)</p>
+                  </div>
+                  <Link href={`/brands/${rule.brandId}`} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent hover:text-accent-strong">
+                    Review rule <ArrowRight aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="mt-6 grid gap-6 sm:grid-cols-3">
         <Link

@@ -340,6 +340,29 @@ async function main() {
 
     await page.open(`${BASE_URL}/login`);
     await page.waitForText("Choose who you are");
+    await check("public registration offers Creator access only", async () => {
+      await page.evaluate(`(() => {
+        const button = [...document.querySelectorAll("button")].find(
+          (item) => item.textContent.trim() === "Create account",
+        );
+        button?.click();
+      })()`);
+      await page.waitFor(`[...document.querySelectorAll('input[name="role"]')].some(
+        (input) => input.value === "CREATOR",
+      )`);
+      const roles = await page.evaluate(`
+        [...document.querySelectorAll('input[name="role"]')].map((input) => input.value)
+      `);
+      assert(roles.length === 1 && roles[0] === "CREATOR", `unexpected public roles: ${roles}`);
+      await page.evaluate(`(() => {
+        const button = [...document.querySelectorAll("button")].find(
+          (item) => item.textContent.trim() === "Sign in",
+        );
+        button?.click();
+      })()`);
+      await page.waitForText("Choose who you are");
+      return "public sign-up is fixed to Creator";
+    });
     await check("role chooser selects a portal without assigning access", async () => {
       const clicked = await page.evaluate(`(() => {
         const button = [...document.querySelectorAll("button")].find(
@@ -471,6 +494,48 @@ async function main() {
     await setSession(page, managerToken);
     await page.open(url);
 
+    await check("Manager escalates a submitted decision to a Supervisor", async () => {
+      await page.select(`#escalation-supervisor-${content.id}`, supervisorUser.id);
+      await page.fill(
+        `#escalation-question-${content.id}`,
+        "Please independently assess whether the brand tone finding should block approval.",
+      );
+      await page.clickButton("Escalate to Supervisor");
+      const escalation = await waitForDb(
+        () => prisma.supervisorEscalation.findFirst({
+          where: { contentId: content.id, status: "OPEN" },
+        }),
+        "open Supervisor escalation",
+      );
+      assert(escalation.supervisorId === supervisorUser.id, "escalation assigned to the wrong Supervisor");
+      const unchanged = await prisma.content.findUniqueOrThrow({ where: { id: content.id } });
+      assert(unchanged.status === "SUBMITTED", "escalation unexpectedly changed review status");
+      return "submitted review paused for Supervisor input";
+    });
+
+    const escalation = await prisma.supervisorEscalation.findFirstOrThrow({
+      where: { contentId: content.id, status: "OPEN" },
+    });
+    await setSession(page, supervisorToken);
+    await page.open(url);
+    await check("assigned Supervisor returns a recorded assessment", async () => {
+      await page.fill(
+        `#escalation-resolution-${escalation.id}`,
+        "The tone is consistent with the configured warm brand voice; approval can proceed.",
+      );
+      await page.clickButton("Return decision to Manager");
+      const resolved = await waitForDb(
+        () => prisma.supervisorEscalation.findFirst({
+          where: { id: escalation.id, status: "RESOLVED" },
+        }),
+        "resolved Supervisor escalation",
+      );
+      assert(resolved.resolution?.includes("configured warm brand voice"), "Supervisor response was not saved");
+      return "assessment recorded in the escalation trail";
+    });
+
+    await setSession(page, managerToken);
+    await page.open(url);
     await check("manager approves content", async () => {
       await page.fill(`#review-note-${content.id}`, "Approved for the campaign.");
       await page.clickButton("Approve");
@@ -532,7 +597,7 @@ async function main() {
       );
       assert(
         chain.join("|") ===
-          "SUBMITTED:creator@vetto.test|CHANGES_REQUESTED:manager@vetto.test|SUBMITTED:creator@vetto.test|APPROVED:manager@vetto.test",
+          "SUBMITTED:creator@vetto.test|CHANGES_REQUESTED:manager@vetto.test|SUBMITTED:creator@vetto.test|ESCALATED:manager@vetto.test|SUPERVISOR_REVIEWED:supervisor@vetto.test|APPROVED:manager@vetto.test",
         `unexpected review chain: ${chain.join("|")}`,
       );
       assert(
@@ -547,6 +612,8 @@ async function main() {
       for (const expected of [
         "content.submitted_for_review",
         "content.changes_requested",
+        "content.supervisor_escalated",
+        "content.supervisor_escalation_resolved",
         "content.approved",
       ]) {
         assert(actions.includes(expected), `missing audit action ${expected}`);

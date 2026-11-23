@@ -50,6 +50,7 @@ export type DeterministicAnalysis = {
     visual: VisualAnalysis | null;
     rulesEvaluated: number;
     rulesSkipped: string[];
+    fontMatch: { status: "matched" | "mismatch" | "unavailable" | "not-configured"; observed: string[]; approved: string[] };
   };
 };
 
@@ -59,6 +60,16 @@ function normalize(value: string) {
 
 function lower(value: string) {
   return normalize(value).toLowerCase();
+}
+
+function normalizeFontName(value: string) {
+  return value
+    .replace(/^[A-Z]{6}\+/, "")
+    .replace(/[-_,](regular|bold|italic|oblique|medium|light|semibold|black).*$/i, "")
+    .replace(/mt$/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function snippet(text: string, index: number, length: number) {
@@ -433,15 +444,33 @@ export function analyzeDeterministic({
     extraction.data?.kind === "PDF" ||
     extraction.data?.kind === "DOCX"
   ) {
-    limitations.push(
-      "Visual checks are limited to uploaded images. Documents were evaluated as text only.",
-    );
+    limitations.push("Image visual-quality and logo checks apply to uploaded images only. PDF/DOCX documents are checked using available text and font metadata.");
   }
 
-  if (brandFonts.length > 0) {
-    limitations.push(
-      "Exact typography matching requires font metadata that is not reliably available from OCR, so font use was not scored.",
-    );
+  const observedFonts = Array.from(new Set((extraction.data?.fontHints ?? []).filter(Boolean))).slice(0, 16);
+  const normalizedApprovedFonts = brandFonts.map(normalizeFontName).filter(Boolean);
+  const unmatchedFonts = observedFonts.filter((font) => !normalizedApprovedFonts.includes(normalizeFontName(font)));
+  const fontMatch: DeterministicAnalysis["metadata"]["fontMatch"] =
+    normalizedApprovedFonts.length === 0
+      ? { status: "not-configured", observed: observedFonts, approved: brandFonts }
+      : observedFonts.length === 0
+        ? { status: "unavailable", observed: observedFonts, approved: brandFonts }
+        : { status: unmatchedFonts.length === 0 ? "matched" : "mismatch", observed: observedFonts, approved: brandFonts };
+
+  if (normalizedApprovedFonts.length > 0 && unmatchedFonts.length > 0) {
+    findings.push({
+      ruleId: null,
+      category: "VISUAL_QUALITY",
+      source: "DETERMINISTIC",
+      severity: "MEDIUM",
+      title: "Unapproved font detected",
+      description: `Document font metadata includes ${unmatchedFonts.slice(0, 5).join(", ")}, which is not on the approved font list (${brandFonts.join(", ")}).`,
+      recommendation: "Use an approved brand font and re-export the document.",
+      evidence: { observed: observedFonts, unmatched: unmatchedFonts, approved: brandFonts },
+      confidence: 0.85,
+    });
+  } else if (fontMatch.status === "unavailable") {
+    limitations.push("Font metadata was unavailable for this file, so approved-font matching could not be evaluated.");
   }
 
   const scores: ScoreSet = {
@@ -472,6 +501,7 @@ export function analyzeDeterministic({
       visual,
       rulesEvaluated: activeRules.length,
       rulesSkipped,
+      fontMatch,
     },
   };
 }

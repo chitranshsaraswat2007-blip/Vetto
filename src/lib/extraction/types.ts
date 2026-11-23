@@ -19,6 +19,7 @@ export type ExtractionData = {
   textLength?: number;
   hasTextLayer?: boolean;
   ocrConfidence?: number;
+  ocrPages?: number;
   words?: OcrWord[];
   dominantColors?: DominantColor[];
   fontHints?: string[];

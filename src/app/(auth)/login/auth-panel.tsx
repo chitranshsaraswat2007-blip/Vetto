@@ -17,12 +17,11 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/form";
+import { Input, Label } from "@/components/ui/form";
 import { loginAction, registerAction } from "@/lib/auth/actions";
-import { roleDescriptions, roleLabels } from "@/lib/auth/permissions";
-import { signupRoles } from "@/lib/users/types";
 import type {
   LoginState,
   RegisterState,
@@ -347,6 +346,11 @@ function SignInForm({
 
         <FormError>{state.error}</FormError>
 
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <Link href="/forgot-password" className="text-accent hover:text-accent-strong">Forgot password?</Link>
+          <Link href="/resend-verification" className="text-accent hover:text-accent-strong">Resend verification email</Link>
+        </div>
+
         <Button
           type="submit"
           size="lg"
@@ -531,27 +535,13 @@ function SignUpForm() {
       </div>
 
       <div>
-        <Label
-          htmlFor={`${formId}-role`}
-          className="text-[10px] uppercase tracking-[0.14em]"
-        >
-          Create account as
+        <Label className="text-[10px] uppercase tracking-[0.14em]">
+          Account role
         </Label>
-        <Select
-          id={`${formId}-role`}
-          name="role"
-          value={values.role}
-          onChange={(event) => updateField("role", event.target.value)}
-          className="h-11 rounded-lg text-base sm:text-sm"
-        >
-          {signupRoles.map((role) => (
-            <option key={role} value={role}>
-              {roleLabels[role]}
-            </option>
-          ))}
-        </Select>
+        <input type="hidden" name="role" value="CREATOR" />
+        <p className="mt-1.5 text-sm font-medium text-ink">Creator</p>
         <p className="mt-1.5 text-[11px] leading-5 text-ink-muted">
-          {roleDescriptions[values.role as keyof typeof roleDescriptions]}
+          New accounts start as Creators. An Admin can assign Manager, Supervisor, or Admin access when needed.
         </p>
       </div>
 
@@ -624,7 +614,13 @@ function SignUpForm() {
         </p>
       </div>
 
-      <FormError>{serverError}</FormError>
+      {state.message ? (
+        <div role="status" className="rounded-lg border border-success/20 bg-success-soft px-3 py-2.5 text-xs leading-5 text-success">
+          <p>{state.message}</p>
+          {state.devLink ? <a className="mt-2 inline-block underline" href={state.devLink}>Open development verification link</a> : null}
+          <p className="mt-1">Already verified? <Link href="/login" className="underline">Sign in</Link></p>
+        </div>
+      ) : <FormError>{serverError}</FormError>}
 
       <Button
         type="submit"

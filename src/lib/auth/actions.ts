@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { recordAudit } from "@/lib/audit";
+import { createAuthLink, hashAuthToken, sendAuthEmail } from "@/lib/auth/email";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { createSession, destroySession } from "@/lib/auth/session";
@@ -124,6 +125,10 @@ export async function loginAction(
     return { error: "Email or password is incorrect." };
   }
 
+  if (!user.emailVerifiedAt) {
+    return { error: "Verify your email address before signing in. Check your inbox for the verification link." };
+  }
+
   await createSession(user.id);
   redirect(safeNextPath(formData.get("next")));
 }
@@ -185,7 +190,7 @@ export async function registerAction(
 
   const passwordHash = await hashPassword(parsed.data.password);
 
-  let user: { id: string; role: string };
+  let user: { id: string; role: string; email: string };
 
   try {
     user = await db.user.create({
@@ -195,7 +200,7 @@ export async function registerAction(
         passwordHash,
         role: parsed.data.role,
       },
-      select: { id: true, role: true },
+      select: { id: true, role: true, email: true },
     });
   } catch (error) {
     if (
@@ -225,8 +230,125 @@ export async function registerAction(
     metadata: { role: user.role },
   });
 
-  await createSession(user.id);
-  redirect("/dashboard");
+  const link = await createAuthLink({ userId: user.id, purpose: "VERIFY_EMAIL" });
+  try {
+    await sendAuthEmail({ to: user.email, link, purpose: "VERIFY_EMAIL" });
+  } catch (error) {
+    console.error("Verification email could not be delivered", error);
+    return {
+      message: "Your account was created, but the verification email could not be sent. Ask an administrator to check the email service configuration, then use resend verification.",
+      ...(process.env.NODE_ENV !== "production" ? { devLink: link } : {}),
+    };
+  }
+  return {
+    message: `Account created. Check ${user.email} for a verification link before signing in.`,
+    ...(process.env.NODE_ENV !== "production" ? { devLink: link } : {}),
+  };
+}
+
+export async function resendVerificationAction(
+  _previousState: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const address = await getRequestAddress();
+  const email = requestEmailKey(formData);
+  const limit = consumeRateLimit(`verify:resend:${address}:${email}`, { limit: 3, windowMs: 60 * 60 * 1000 });
+  if (!limit.allowed) return { error: rateLimitMessage(limit.retryAfterSeconds) };
+  const parsed = emailSchema.safeParse(formData.get("email"));
+  if (!parsed.success) return { error: "Enter the email address for your account." };
+  const user = await db.user.findUnique({ where: { email: parsed.data } });
+  if (user && !user.emailVerifiedAt && user.isActive) {
+    const link = await createAuthLink({ userId: user.id, purpose: "VERIFY_EMAIL" });
+    try {
+      await sendAuthEmail({ to: user.email, link, purpose: "VERIFY_EMAIL" });
+      return {
+        message: "If that account needs verification, a new link has been sent.",
+        ...(process.env.NODE_ENV !== "production" ? { devLink: link } : {}),
+      };
+    } catch (error) {
+      console.error("Verification email could not be delivered", error);
+      return process.env.NODE_ENV === "production"
+        ? { message: "If that account needs verification, a new link has been sent." }
+        : { message: "Email delivery is not configured in development.", devLink: link };
+    }
+  }
+  return { message: "If that account needs verification, a new link has been sent." };
+}
+
+export async function requestPasswordResetAction(
+  _previousState: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const address = await getRequestAddress();
+  const email = requestEmailKey(formData);
+  const limit = consumeRateLimit(`password-reset:${address}:${email}`, { limit: 4, windowMs: 60 * 60 * 1000 });
+  if (!limit.allowed) return { message: "If an active account matches, a reset link has been sent." };
+  const parsed = emailSchema.safeParse(formData.get("email"));
+  let devLink: string | undefined;
+  if (parsed.success) {
+    const user = await db.user.findUnique({ where: { email: parsed.data } });
+    if (user?.passwordHash && user.isActive) {
+      const link = await createAuthLink({ userId: user.id, purpose: "RESET_PASSWORD" });
+      if (process.env.NODE_ENV !== "production") devLink = link;
+      try {
+        await sendAuthEmail({ to: user.email, link, purpose: "RESET_PASSWORD" });
+      } catch (error) {
+        console.error("Password reset email could not be delivered", error);
+      }
+    }
+  }
+  return { message: "If an active account matches, a reset link has been sent.", ...(devLink ? { devLink } : {}) };
+}
+
+export async function verifyEmailAction(formData: FormData) {
+  const token = formData.get("token");
+  if (typeof token !== "string" || token.length > 200) redirect("/verify-email?result=invalid");
+  const record = await db.authToken.findUnique({ where: { tokenHash: hashAuthToken(token) } });
+  if (!record || record.purpose !== "VERIFY_EMAIL" || record.usedAt || record.expiresAt <= new Date()) {
+    redirect("/verify-email?result=invalid");
+  }
+  const now = new Date();
+  const claimed = await db.$transaction(async (tx) => {
+    const result = await tx.authToken.updateMany({
+      where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    if (result.count !== 1) return false;
+    await tx.user.update({ where: { id: record.userId }, data: { emailVerifiedAt: now } });
+    return true;
+  });
+  if (!claimed) redirect("/verify-email?result=invalid");
+  redirect("/verify-email?result=success");
+}
+
+export async function resetPasswordAction(formData: FormData) {
+  const token = formData.get("token");
+  const password = formData.get("password");
+  const confirmation = formData.get("confirmPassword");
+  if (typeof token !== "string" || token.length > 200) redirect("/reset-password?result=invalid");
+  const parsed = z.object({
+    password: z.string().min(10).refine((value) => Buffer.byteLength(value, "utf8") <= 72),
+    confirmPassword: z.string().min(1),
+  }).refine((value) => value.password === value.confirmPassword).safeParse({ password, confirmPassword: confirmation });
+  if (!parsed.success) redirect(`/reset-password?token=${encodeURIComponent(token)}&result=invalid-input`);
+  const record = await db.authToken.findUnique({ where: { tokenHash: hashAuthToken(token) } });
+  if (!record || record.purpose !== "RESET_PASSWORD" || record.usedAt || record.expiresAt <= new Date()) {
+    redirect("/reset-password?result=invalid");
+  }
+  const passwordHash = await hashPassword(parsed.data.password);
+  const now = new Date();
+  const changed = await db.$transaction(async (tx) => {
+    const claimed = await tx.authToken.updateMany({
+      where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    if (claimed.count !== 1) return false;
+    await tx.user.update({ where: { id: record.userId }, data: { passwordHash } });
+    await tx.session.deleteMany({ where: { userId: record.userId } });
+    return true;
+  });
+  if (!changed) redirect("/reset-password?result=invalid");
+  redirect("/login?passwordReset=1");
 }
 
 export async function logoutAction() {

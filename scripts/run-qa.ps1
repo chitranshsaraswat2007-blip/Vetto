@@ -64,9 +64,9 @@ try {
   $env:AI_MODEL = "vetto-qa-mock"
   $env:NEXT_PUBLIC_APP_URL = $baseUrl
 
-  $databaseExists = & (Join-Path $pgBin "psql.exe") `
+  $databaseExists = @(& (Join-Path $pgBin "psql.exe") `
     -h 127.0.0.1 -p $port -U postgres -d postgres -tAc `
-    "SELECT 1 FROM pg_database WHERE datname = 'vetto'"
+    "SELECT 1 FROM pg_database WHERE datname = 'vetto'") -join ""
   if ($LASTEXITCODE -ne 0) { throw "Could not query the temporary PostgreSQL cluster." }
   if ($databaseExists.Trim() -ne "1") {
     Invoke-Checked $createdb @("-h", "127.0.0.1", "-p", "$port", "-U", "postgres", "vetto")

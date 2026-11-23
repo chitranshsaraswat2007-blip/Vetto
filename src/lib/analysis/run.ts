@@ -108,7 +108,7 @@ export async function runAnalysis(
         brandId: content.brandId,
         status: "RUNNING",
         engineVersion: "deterministic-v1",
-        promptVersion: isAiConfigured() ? "ai-brand-review-v1" : null,
+        promptVersion: isAiConfigured() ? "ai-brand-review-v2-proof-gate" : null,
       },
     });
   });
@@ -174,6 +174,7 @@ export async function runAnalysis(
           },
           extraction,
           deterministicFindings: deterministic.findings,
+          rules: content.brand.rules,
         });
       } catch (error) {
         aiError =
@@ -206,9 +207,11 @@ export async function runAnalysis(
         kind: content.kind,
         pages: extractionData?.pages ?? null,
         ocrConfidence: extractionData?.ocrConfidence ?? null,
+        ocrPages: extractionData?.ocrPages ?? 0,
         width: extractionData?.width ?? null,
         height: extractionData?.height ?? null,
         dominantColors: extractionData?.dominantColors ?? [],
+        fontHints: extractionData?.fontHints ?? [],
         textLength: extraction.text.length,
       },
       scoring: {
@@ -231,6 +234,10 @@ export async function runAnalysis(
         brandVibeRationale:
           aiResult?.status === "completed"
             ? aiResult.brandVibeRationale
+            : null,
+        brandVibeEvidence:
+          aiResult?.status === "completed"
+            ? aiResult.brandVibeEvidence
             : null,
         error: aiError,
       },

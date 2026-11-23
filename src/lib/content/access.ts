@@ -18,7 +18,20 @@ export async function canViewContent(
     where: { contentId: content.id },
     select: { supervisorId: true, content: { select: { status: true } } },
   });
-  return assignment?.supervisorId === user.id && assignment.content.status === "APPROVED";
+  if (assignment?.supervisorId === user.id && assignment.content.status === "APPROVED") {
+    return true;
+  }
+
+  const openEscalation = await db.supervisorEscalation.findFirst({
+    where: {
+      contentId: content.id,
+      supervisorId: user.id,
+      status: "OPEN",
+      content: { status: "SUBMITTED" },
+    },
+    select: { id: true },
+  });
+  return Boolean(openEscalation);
 }
 
 export function canProcessContent(

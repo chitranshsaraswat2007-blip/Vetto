@@ -9,6 +9,8 @@ export type SessionUser = {
 
 export type LoginState = {
   error?: string;
+  message?: string;
+  devLink?: string;
 };
 
 export type RegistrationField =
@@ -20,5 +22,7 @@ export type RegistrationField =
 
 export type RegisterState = {
   error?: string;
+  message?: string;
+  devLink?: string;
   fieldErrors?: Partial<Record<RegistrationField, string>>;
 };

@@ -21,6 +21,7 @@ export const reviewActionLabels: Record<string, string> = {
   APPROVED: "Approved",
   CHANGES_REQUESTED: "Changes requested",
   COMMENTED: "Comment",
+  ESCALATED: "Escalated to Supervisor",
   SUPERVISOR_REVIEWED: "Supervisor secondary review",
 };
 

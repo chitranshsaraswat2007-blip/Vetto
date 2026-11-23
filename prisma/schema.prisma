@@ -112,6 +112,17 @@ enum ReviewAction {
   CHANGES_REQUESTED
   COMMENTED
   SUPERVISOR_REVIEWED
+  ESCALATED
+}
+
+enum SupervisorEscalationStatus {
+  OPEN
+  RESOLVED
+}
+
+enum AuthTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
 }
 
 model User {
@@ -121,6 +132,7 @@ model User {
   passwordHash String?
   role         Role     @default(CREATOR)
   isActive     Boolean  @default(true)
+  emailVerifiedAt DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -131,9 +143,28 @@ model User {
   reviews          Review[]     @relation("ReviewActor")
   supervisorAssignments SupervisorAssignment[] @relation("SupervisorAssignedTo")
   assignmentsMade        SupervisorAssignment[] @relation("SupervisorAssignedBy")
+  escalationsRaised      SupervisorEscalation[] @relation("EscalationRaisedBy")
+  escalationsAssigned    SupervisorEscalation[] @relation("EscalationAssignedTo")
+  escalationsResolved    SupervisorEscalation[] @relation("EscalationResolvedBy")
   auditLogs        AuditLog[]   @relation("AuditActor")
+  authTokens       AuthToken[]
 
   @@index([role])
+}
+
+model AuthToken {
+  id        String          @id @default(cuid())
+  tokenHash String          @unique
+  purpose   AuthTokenPurpose
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+  @@index([expiresAt])
 }
 
 model Session {
@@ -287,6 +318,7 @@ model Content {
   analysisRuns AnalysisRun[]
   reviews      Review[]
   supervisorAssignment SupervisorAssignment?
+  supervisorEscalations SupervisorEscalation[]
   auditLogs    AuditLog[]
 
   @@index([brandId, status])
@@ -334,6 +366,7 @@ model AnalysisRun {
   brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
   findings Finding[]
   reviews  Review[]
+  supervisorEscalations SupervisorEscalation[]
 
   @@index([contentId, createdAt])
   @@index([brandId])
@@ -393,6 +426,31 @@ model SupervisorAssignment {
 
   @@index([supervisorId, createdAt])
   @@index([assignedById, createdAt])
+}
+
+model SupervisorEscalation {
+  id            String                     @id @default(cuid())
+  contentId     String
+  openContentId String?                    @unique
+  analysisRunId String?
+  raisedById    String
+  supervisorId  String
+  question      String
+  resolution    String?
+  status        SupervisorEscalationStatus @default(OPEN)
+  createdAt     DateTime                   @default(now())
+  resolvedAt    DateTime?
+  resolvedById  String?
+
+  content     Content      @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  analysisRun AnalysisRun? @relation(fields: [analysisRunId], references: [id], onDelete: SetNull)
+  raisedBy    User         @relation("EscalationRaisedBy", fields: [raisedById], references: [id], onDelete: Restrict)
+  supervisor  User         @relation("EscalationAssignedTo", fields: [supervisorId], references: [id], onDelete: Restrict)
+  resolvedBy  User?        @relation("EscalationResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([contentId, status, createdAt])
+  @@index([supervisorId, status, createdAt])
+  @@index([raisedById, createdAt])
 }
 
 model AuditLog {

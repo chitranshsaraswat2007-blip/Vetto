@@ -37,11 +37,27 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    const requestPayload = JSON.parse(body);
+    const userPrompt = requestPayload.messages?.find((message) => message.role === "user")?.content ?? "";
+    const toneRule = userPrompt.match(/ID: ([^\n]+)\nType: TONE\nCategory: ([^\n]+)\nName: ([^\n]+)/);
+    const extractedText = userPrompt.match(/Extracted content text:\n"""\n([\s\S]*?)\n"""/)?.[1] ?? "";
+    const quote = extractedText.match(/\S+(?:\s+\S+){0,7}/)?.[0] ?? "";
+    const brandVibe = toneRule && quote
+      ? {
+          score: 78,
+          rationale: "The extracted copy matches the configured warm tone.",
+          ruleId: toneRule[1],
+          quote,
+        }
+      : null;
+
     const content = mode === "malformed"
       ? "{ this is not valid JSON"
       : JSON.stringify({
           summary: "Mock review based on supplied extracted evidence.",
-          brandVibe: { score: 78, rationale: "The extracted copy matches the configured warm tone." },
+          brandVibe,
           findings: [],
         });
     response.writeHead(200, { "Content-Type": "application/json" });

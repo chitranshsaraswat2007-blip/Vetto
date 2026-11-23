@@ -78,6 +78,7 @@ export async function createUserAction(
         email: parsed.data.email,
         passwordHash,
         role: parsed.data.role,
+        emailVerifiedAt: new Date(),
       },
       select: { id: true },
     });

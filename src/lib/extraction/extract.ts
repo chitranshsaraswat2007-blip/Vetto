@@ -128,19 +128,74 @@ async function extractImage(buffer: Buffer): Promise<ExtractionResult> {
 }
 
 async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
-  const { extractText } = await import("unpdf");
-  const result = await extractText(new Uint8Array(buffer), {
+  const { extractText, extractTextItems, renderPageAsImage } = await import("unpdf");
+  const pdfBytes = new Uint8Array(buffer);
+  const result = await extractText(pdfBytes, {
     mergePages: false,
   });
-
   const pageTexts = result.text.map((page) => page.trim());
-  const text = pageTexts.filter(Boolean).join("\n\n").trim();
+  const hasTextLayer = pageTexts.some((page) => page.replace(/\s/g, "").length >= 25);
   const notes: string[] = [];
+  let ocrConfidence: number | undefined;
+  let ocrPages = 0;
+  let fontHints: string[] = [];
+
+  try {
+    const itemResult = await extractTextItems(pdfBytes);
+    fontHints = Array.from(new Set(itemResult.items.flatMap((page) => page.map((item) => item.fontFamily.trim()).filter(Boolean)))).slice(0, 16);
+  } catch (error) {
+    console.error("PDF font metadata extraction failed", error);
+  }
+
+  const pagesNeedingOcr = pageTexts
+    .map((page, index) => ({ page, pageNumber: index + 1 }))
+    .filter(({ page }) => page.replace(/\s/g, "").length < 25)
+    .slice(0, 12);
+
+  if (pagesNeedingOcr.length > 0) {
+    if (result.totalPages > 12) {
+      notes.push("PDF OCR is limited to the first 12 pages that need OCR.");
+    }
+    try {
+      const { createWorker } = await import("tesseract.js");
+      const cachePath = path.join(process.cwd(), ".tesseract-cache");
+      await mkdir(cachePath, { recursive: true });
+      const worker = await createWorker("eng", 1, { cachePath });
+      const confidences: number[] = [];
+      try {
+        for (const { pageNumber } of pagesNeedingOcr) {
+          const rendered = await renderPageAsImage(pdfBytes, pageNumber, {
+            width: 1600,
+            format: "png",
+            canvasImport: () => import("@napi-rs/canvas"),
+          });
+          if (typeof rendered === "string") continue;
+          const recognized = await worker.recognize(Buffer.from(rendered));
+          const pageText = recognized.data.text.trim();
+          if (pageText) {
+            pageTexts[pageNumber - 1] = pageText;
+            ocrPages += 1;
+          }
+          if (typeof recognized.data.confidence === "number") confidences.push(recognized.data.confidence);
+        }
+      } finally {
+        await worker.terminate().catch(() => {});
+      }
+      if (confidences.length) {
+        ocrConfidence = Math.round((confidences.reduce((sum, value) => sum + value, 0) / confidences.length) * 10) / 10;
+      }
+    } catch (error) {
+      console.error("Scanned PDF OCR failed", error);
+      notes.push("OCR could not process one or more scanned PDF pages. Text checks may be incomplete.");
+    }
+  }
+
+  const text = pageTexts.filter(Boolean).join("\n\n").trim();
 
   if (!text) {
-    notes.push(
-      "This PDF contains no extractable text layer. It may be a scanned document; image OCR of PDFs is not supported, so text rules were not applied.",
-    );
+    notes.push("No readable text was extracted from this PDF; text rules were not applied.");
+  } else if (ocrPages > 0) {
+    notes.push(`OCR extracted text from ${ocrPages} scanned PDF page${ocrPages === 1 ? "" : "s"}.`);
   }
 
   const data: ExtractionData = {
@@ -148,7 +203,10 @@ async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
     pages: result.totalPages,
     pageTexts,
     textLength: text.length,
-    hasTextLayer: text.length > 0,
+    hasTextLayer,
+    ocrConfidence,
+    ocrPages,
+    fontHints,
     notes,
   };
 
@@ -158,6 +216,17 @@ async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
 async function extractDocx(buffer: Buffer): Promise<ExtractionResult> {
   const mammoth = await import("mammoth");
   const result = await mammoth.extractRawText({ buffer });
+  const zip = await import("jszip");
+  const archive = await zip.default.loadAsync(buffer);
+  const documentXml = await archive.file("word/document.xml")?.async("string");
+  const stylesXml = await archive.file("word/styles.xml")?.async("string");
+  const fontHints = Array.from(new Set(
+    [documentXml, stylesXml]
+      .filter((xml): xml is string => Boolean(xml))
+      .flatMap((xml) => Array.from(xml.matchAll(/<w:rFonts\b[^>]*\/?\s*>/g)).flatMap((tag) => Array.from(tag[0].matchAll(/w:(?:ascii|hAnsi|eastAsia|cs)="([^"]+)"/g), (match) => match[1].split(",")).flat()))
+      .map((name) => name.trim())
+      .filter(Boolean),
+  )).slice(0, 16);
   const text = result.value.trim();
   const notes = result.messages
     .slice(0, 5)
@@ -170,6 +239,7 @@ async function extractDocx(buffer: Buffer): Promise<ExtractionResult> {
   const data: ExtractionData = {
     kind: "DOCX",
     textLength: text.length,
+    fontHints,
     notes,
   };
 

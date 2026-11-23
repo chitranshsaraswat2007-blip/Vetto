@@ -189,17 +189,40 @@ export async function reviewDecisionAction(
     return { error: "Only submitted content can receive a review decision." };
   }
 
+  const openEscalation = await db.supervisorEscalation.findFirst({
+    where: { contentId: content.id, status: "OPEN" },
+    select: { id: true },
+  });
+  if (openEscalation) {
+    return {
+      error: "Wait for the assigned Supervisor to resolve the escalation before deciding.",
+    };
+  }
+
   const latestRun = content.analysisRuns[0] ?? null;
 
   try {
-    const decided = await db.$transaction(async (transaction) => {
+    const result = await db.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Content" WHERE "id" = ${content.id} FOR UPDATE`;
+      const current = await transaction.content.findUnique({
+        where: { id: content.id },
+        select: { status: true },
+      });
+      if (current?.status !== "SUBMITTED") return "not-submitted" as const;
+
+      const activeEscalation = await transaction.supervisorEscalation.findFirst({
+        where: { contentId: content.id, status: "OPEN" },
+        select: { id: true },
+      });
+      if (activeEscalation) return "escalation-open" as const;
+
       const claimed = await transaction.content.updateMany({
         where: { id: content.id, status: "SUBMITTED" },
         data: { status: decision },
       });
 
       if (claimed.count === 0) {
-        return false;
+        return "not-submitted" as const;
       }
 
       await transaction.review.create({
@@ -212,10 +235,15 @@ export async function reviewDecisionAction(
         },
       });
 
-      return true;
+      return "decided" as const;
     });
 
-    if (!decided) {
+    if (result === "escalation-open") {
+      return {
+        error: "Wait for the assigned Supervisor to resolve the escalation before deciding.",
+      };
+    }
+    if (result !== "decided") {
       return { error: "Only submitted content can receive a review decision." };
     }
   } catch (error) {
@@ -303,6 +331,195 @@ export async function addReviewCommentAction(
 
   revalidateReviewSurfaces(content.id);
   return { success: "Comment added to the review history." };
+}
+
+export async function createSupervisorEscalationAction(
+  _previousState: ReviewActionState,
+  formData: FormData,
+): Promise<ReviewActionState> {
+  const user = await requireUser();
+  if (user.role !== "MANAGER" || !hasPermission(user.role, "review:assign")) {
+    return { error: "Only a Manager can escalate a review to a Supervisor." };
+  }
+
+  const contentId = getString(formData, "contentId");
+  const supervisorId = getString(formData, "supervisorId");
+  const question = getString(formData, "question");
+  if (!contentId || !supervisorId) return { error: "Choose a Supervisor." };
+  if (question.length < 5 || question.length > 2000) {
+    return { error: "Explain what needs a Supervisor's judgment (5–2,000 characters)." };
+  }
+
+  const [content, supervisor, existing] = await Promise.all([
+    db.content.findUnique({
+      where: { id: contentId },
+      select: {
+        id: true,
+        brandId: true,
+        status: true,
+        analysisRuns: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } },
+      },
+    }),
+    db.user.findUnique({
+      where: { id: supervisorId },
+      select: { id: true, name: true, role: true, isActive: true },
+    }),
+    db.supervisorEscalation.findFirst({
+      where: { contentId, status: "OPEN" },
+      select: { id: true },
+    }),
+  ]);
+
+  if (!content || content.status !== "SUBMITTED") {
+    return { error: "Only submitted content can be escalated." };
+  }
+  if (!supervisor || supervisor.role !== "SUPERVISOR" || !supervisor.isActive) {
+    return { error: "Choose an active Supervisor account." };
+  }
+  if (existing) return { error: "This review already has an open Supervisor escalation." };
+
+  try {
+    const result = await db.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT "id" FROM "Content" WHERE "id" = ${contentId} FOR UPDATE`;
+      const current = await transaction.content.findUnique({
+        where: { id: contentId },
+        select: { status: true },
+      });
+      if (current?.status !== "SUBMITTED") return { kind: "not-submitted" as const };
+
+      const openEscalation = await transaction.supervisorEscalation.findFirst({
+        where: { contentId, status: "OPEN" },
+        select: { id: true },
+      });
+      if (openEscalation) return { kind: "already-open" as const };
+
+      const created = await transaction.supervisorEscalation.create({
+        data: {
+          contentId,
+          openContentId: contentId,
+          analysisRunId: content.analysisRuns[0]?.id,
+          raisedById: user.id,
+          supervisorId,
+          question,
+        },
+      });
+      await transaction.review.create({
+        data: {
+          contentId,
+          analysisRunId: content.analysisRuns[0]?.id,
+          actorId: user.id,
+          action: "ESCALATED",
+          comment: `Escalated to ${supervisor.name}: ${question}`,
+        },
+      });
+      return { kind: "created" as const, escalation: created };
+    });
+
+    if (result.kind !== "created") {
+      return {
+        error: result.kind === "already-open"
+          ? "This review already has an open Supervisor escalation."
+          : "Only submitted content can be escalated.",
+      };
+    }
+
+    await recordAudit({
+      actorId: user.id,
+      action: "content.supervisor_escalated",
+      entityType: "SupervisorEscalation",
+      entityId: result.escalation.id,
+      brandId: content.brandId,
+      contentId,
+      metadata: { supervisorId, question },
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "P2002"
+    ) {
+      return { error: "This review already has an open Supervisor escalation." };
+    }
+    console.error("Failed to create Supervisor escalation", error);
+    return { error: "The review could not be escalated. Try again." };
+  }
+
+  revalidateReviewSurfaces(contentId);
+  return { success: "Escalated to the Supervisor. The Manager decision is paused." };
+}
+
+export async function resolveSupervisorEscalationAction(
+  _previousState: ReviewActionState,
+  formData: FormData,
+): Promise<ReviewActionState> {
+  const user = await requireUser();
+  if (user.role !== "SUPERVISOR") {
+    return { error: "Only the assigned Supervisor can resolve this escalation." };
+  }
+
+  const escalationId = getString(formData, "escalationId");
+  const resolution = getString(formData, "resolution");
+  if (!escalationId) return { error: "Escalation is missing." };
+  if (resolution.length < 5 || resolution.length > 2000) {
+    return { error: "Write a decision with supporting context (5–2,000 characters)." };
+  }
+
+  const escalation = await db.supervisorEscalation.findUnique({
+    where: { id: escalationId },
+    select: {
+      id: true,
+      contentId: true,
+      supervisorId: true,
+      status: true,
+      content: { select: { status: true, brandId: true } },
+    },
+  });
+  if (
+    !escalation ||
+    escalation.supervisorId !== user.id ||
+    escalation.status !== "OPEN" ||
+    escalation.content.status !== "SUBMITTED"
+  ) {
+    return { error: "This open escalation is not assigned to your account." };
+  }
+
+  const resolved = await db.$transaction(async (transaction) => {
+    const updated = await transaction.supervisorEscalation.updateMany({
+      where: { id: escalation.id, supervisorId: user.id, status: "OPEN" },
+      data: {
+        status: "RESOLVED",
+        openContentId: null,
+        resolution,
+        resolvedAt: new Date(),
+        resolvedById: user.id,
+      },
+    });
+    if (updated.count === 0) return false;
+
+    await transaction.review.create({
+      data: {
+        contentId: escalation.contentId,
+        actorId: user.id,
+        action: "SUPERVISOR_REVIEWED",
+        comment: `Supervisor escalation decision: ${resolution}`,
+      },
+    });
+    return true;
+  });
+  if (!resolved) return { error: "This escalation has already been resolved." };
+
+  await recordAudit({
+    actorId: user.id,
+    action: "content.supervisor_escalation_resolved",
+    entityType: "SupervisorEscalation",
+    entityId: escalation.id,
+    brandId: escalation.content.brandId,
+    contentId: escalation.contentId,
+    metadata: { resolution },
+  });
+  revalidateReviewSurfaces(escalation.contentId);
+  return { success: "Supervisor decision recorded and returned to the Manager." };
 }
 
 export async function assignSupervisorReviewAction(

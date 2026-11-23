@@ -9,7 +9,9 @@ import {
   AssignSupervisorReviewForm,
   ReviewCommentForm,
   ReviewDecisionForm,
+  ResolveSupervisorEscalationForm,
   SubmitForReviewForm,
+  SupervisorEscalationForm,
 } from "@/components/reviews/review-forms";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -138,12 +140,21 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 
 type AnalysisMeta = {
   limitations?: unknown;
+  fontMatch?: {
+    status?: "matched" | "mismatch" | "unavailable" | "not-configured";
+    observed?: string[];
+    approved?: string[];
+  };
   ai?: {
     status?: string;
     summary?: string | null;
     error?: string | null;
     model?: string | null;
     brandVibeRationale?: string | null;
+    brandVibeEvidence?: {
+      quote?: string;
+      ruleName?: string;
+    } | null;
   } | null;
 };
 
@@ -170,6 +181,14 @@ export default async function ContentDetailPage({
       supervisorAssignment: {
         include: { supervisor: { select: { id: true, name: true } }, assignedBy: { select: { name: true } } },
       },
+      supervisorEscalations: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          supervisor: { select: { id: true, name: true } },
+          raisedBy: { select: { name: true } },
+          resolvedBy: { select: { name: true } },
+        },
+      },
       analysisRuns: {
         orderBy: { createdAt: "desc" },
         take: 5,
@@ -194,6 +213,14 @@ export default async function ContentDetailPage({
   const canProcess = canProcessContent(user, content);
   const canReview = hasPermission(user.role, "content:review");
   const canAssignSupervisor = user.role === "MANAGER" && hasPermission(user.role, "review:assign");
+  const canEscalate = user.role === "MANAGER" && content.status === "SUBMITTED";
+  const openEscalation = content.supervisorEscalations.find(
+    (escalation) => escalation.status === "OPEN",
+  );
+  const isAssignedEscalation =
+    user.role === "SUPERVISOR" &&
+    openEscalation?.supervisorId === user.id &&
+    content.status === "SUBMITTED";
   const supervisorReviewAssigned =
     user.role === "SUPERVISOR" &&
     content.supervisorAssignment?.supervisorId === user.id &&
@@ -223,6 +250,13 @@ export default async function ContentDetailPage({
   const extractionReady = content.extraction?.status === "COMPLETED";
   const analysisReady = latestRun?.status === "COMPLETED";
   const fileUrl = `/api/content/${content.id}/file`;
+  const supervisors = canAssignSupervisor || canEscalate
+    ? await db.user.findMany({
+        where: { role: "SUPERVISOR", isActive: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
 
   return (
     <>
@@ -316,8 +350,24 @@ export default async function ContentDetailPage({
           ) : null}
 
           {content.status === "SUBMITTED" ? (
-            canReview ? (
-              <ReviewDecisionForm contentId={content.id} />
+            openEscalation ? (
+              isAssignedEscalation ? (
+                <ResolveSupervisorEscalationForm
+                  escalationId={openEscalation.id}
+                  question={openEscalation.question}
+                />
+              ) : (
+                <p className="rounded-md border border-warning/20 bg-warning-soft px-4 py-3 text-xs leading-5 text-warning">
+                  Waiting for {openEscalation.supervisor.name} to assess the question. The Manager decision is paused until they respond.
+                </p>
+              )
+            ) : canReview ? (
+              <div className="space-y-4">
+                <ReviewDecisionForm contentId={content.id} />
+                {canEscalate ? (
+                  <SupervisorEscalationForm contentId={content.id} supervisors={supervisors} />
+                ) : null}
+              </div>
             ) : (
               <p className="rounded-md border border-line bg-surface-muted px-4 py-3 text-xs leading-5 text-ink-soft">
                 This content is waiting for a manager decision. It is locked
@@ -335,7 +385,7 @@ export default async function ContentDetailPage({
                   <AssignSupervisorReviewForm
                     contentId={content.id}
                     assignedSupervisorId={content.supervisorAssignment?.supervisorId}
-                    supervisors={await db.user.findMany({ where: { role: "SUPERVISOR", isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })}
+                    supervisors={supervisors}
                   />
                 </div>
               ) : supervisorReviewAssigned ? (
@@ -467,6 +517,11 @@ export default async function ContentDetailPage({
                     {extractionData?.ocrConfidence !== undefined ? (
                       <Badge variant="outline">
                         OCR confidence {extractionData.ocrConfidence}
+                      </Badge>
+                    ) : null}
+                    {extractionData?.ocrPages ? (
+                      <Badge variant="outline">
+                        OCR on {extractionData.ocrPages} page{extractionData.ocrPages === 1 ? "" : "s"}
                       </Badge>
                     ) : null}
                     {extractionData?.pages ? (
@@ -647,6 +702,11 @@ export default async function ContentDetailPage({
                         Vibe rationale: {ai.brandVibeRationale}
                       </p>
                     ) : null}
+                    {ai?.brandVibeEvidence?.quote ? (
+                      <blockquote className="mt-2 border-l-2 border-accent/40 pl-3 text-[11px] leading-5 text-ink-muted">
+                        Supporting tone rule: {ai.brandVibeEvidence.ruleName ?? "Active tone rule"} · “{ai.brandVibeEvidence.quote}”
+                      </blockquote>
+                    ) : null}
                   </div>
                 </div>
               ) : latestRun?.status === "FAILED" ? (
@@ -688,6 +748,61 @@ export default async function ContentDetailPage({
                     </li>
                   ))}
                 </ul>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {analysisMeta?.fontMatch ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Typography match</CardTitle>
+                <CardDescription>Font family metadata compared with the brand’s approved fonts.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs text-ink-soft">
+                <Badge variant={analysisMeta.fontMatch.status === "matched" ? "success" : analysisMeta.fontMatch.status === "mismatch" ? "warning" : "outline"}>
+                  {analysisMeta.fontMatch.status === "matched" ? "Approved font found" : analysisMeta.fontMatch.status === "mismatch" ? "Font mismatch" : analysisMeta.fontMatch.status === "not-configured" ? "No approved fonts configured" : "Font metadata unavailable"}
+                </Badge>
+                {analysisMeta.fontMatch.observed?.length ? <p>Found: {analysisMeta.fontMatch.observed.join(", ")}</p> : null}
+                {analysisMeta.fontMatch.approved?.length ? <p>Approved: {analysisMeta.fontMatch.approved.join(", ")}</p> : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {content.supervisorEscalations.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Supervisor escalation history</CardTitle>
+                <CardDescription>
+                  The Manager’s question and the Supervisor’s recorded assessment.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ol className="space-y-3">
+                  {content.supervisorEscalations.map((escalation) => (
+                    <li key={escalation.id} className="rounded-md border border-line bg-surface-muted px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-ink">
+                          Asked by {escalation.raisedBy.name} · assigned to {escalation.supervisor.name}
+                        </p>
+                        <Badge variant={escalation.status === "OPEN" ? "warning" : "success"}>
+                          {escalation.status === "OPEN" ? "Waiting for Supervisor" : "Resolved"}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-[10px] text-ink-muted">
+                        {dateFormatter.format(escalation.createdAt)}
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-ink-soft">{escalation.question}</p>
+                      {escalation.resolution ? (
+                        <blockquote className="mt-3 border-l-2 border-accent/40 pl-3 text-xs leading-5 text-ink-soft">
+                          <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-ink-muted">
+                            Supervisor assessment{escalation.resolvedBy ? ` · ${escalation.resolvedBy.name}` : ""}
+                          </span>
+                          {escalation.resolution}
+                        </blockquote>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
               </CardContent>
             </Card>
           ) : null}

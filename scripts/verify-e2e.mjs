@@ -408,7 +408,7 @@ async function main() {
     });
     const limitations = content.analysisRuns[0]?.metadata?.limitations ?? [];
     assert(
-      limitations.some((item) => /Visual checks are limited to uploaded images/.test(item)),
+      limitations.some((item) => /Image visual-quality and logo checks apply to uploaded images only/.test(item)),
       "document limitation text missing",
     );
     assert(content.analysisRuns[0]?.visualQualityScore === null, "visual score should be unscored for PDFs");

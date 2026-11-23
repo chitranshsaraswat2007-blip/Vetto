@@ -7,7 +7,9 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import {
   addReviewCommentAction,
   assignSupervisorReviewAction,
+  createSupervisorEscalationAction,
   reviewDecisionAction,
+  resolveSupervisorEscalationAction,
   submitForReviewAction,
   updateFindingStatusAction,
 } from "@/lib/reviews/actions";
@@ -189,6 +191,99 @@ export function AssignSupervisorReviewForm({
       </Field>
       <SubmitButton size="sm" variant="secondary" pendingLabel="Assigning…">{assignedSupervisorId ? "Reassign" : "Assign"}</SubmitButton>
       <ReviewMessage state={state} />
+    </form>
+  );
+}
+
+export function SupervisorEscalationForm({
+  contentId,
+  supervisors,
+}: {
+  contentId: string;
+  supervisors: { id: string; name: string }[];
+}) {
+  const [state, formAction] = useActionState(
+    createSupervisorEscalationAction,
+    initialReviewState,
+  );
+
+  return (
+    <form action={formAction} className="space-y-3 rounded-md border border-line bg-surface-muted p-4">
+      <input type="hidden" name="contentId" value={contentId} />
+      <p className="text-xs font-medium text-ink">Ask a Supervisor for a second opinion</p>
+      <Field label="Assign to Supervisor" htmlFor={`escalation-supervisor-${contentId}`}>
+        <Select id={`escalation-supervisor-${contentId}`} name="supervisorId" required defaultValue="">
+          <option value="" disabled>Select a Supervisor</option>
+          {supervisors.map((supervisor) => (
+            <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>
+          ))}
+        </Select>
+      </Field>
+      <Field
+        label="What needs their judgment?"
+        htmlFor={`escalation-question-${contentId}`}
+        hint="The Manager decision will pause until the Supervisor responds."
+      >
+        <Textarea
+          id={`escalation-question-${contentId}`}
+          name="question"
+          required
+          minLength={5}
+          maxLength={2000}
+          className="min-h-20"
+          placeholder="Explain what is uncertain and which finding or evidence needs review."
+        />
+      </Field>
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton size="sm" variant="secondary" pendingLabel="Escalating…">
+          Escalate to Supervisor
+        </SubmitButton>
+        <ReviewMessage state={state} />
+      </div>
+    </form>
+  );
+}
+
+export function ResolveSupervisorEscalationForm({
+  escalationId,
+  question,
+}: {
+  escalationId: string;
+  question: string;
+}) {
+  const [state, formAction] = useActionState(
+    resolveSupervisorEscalationAction,
+    initialReviewState,
+  );
+
+  return (
+    <form action={formAction} className="space-y-3">
+      <input type="hidden" name="escalationId" value={escalationId} />
+      <blockquote className="rounded-md border border-line bg-surface px-3 py-2.5 text-xs leading-5 text-ink-soft">
+        <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-ink-muted">Manager’s question</span>
+        {question}
+      </blockquote>
+      <Field
+        label="Supervisor assessment"
+        htmlFor={`escalation-resolution-${escalationId}`}
+        hint="Explain your decision so the Manager can act on it."
+      >
+        <Textarea
+          id={`escalation-resolution-${escalationId}`}
+          name="resolution"
+          required
+          minLength={5}
+          maxLength={2000}
+          className="min-h-24"
+          placeholder="Record your independent assessment and supporting context."
+        />
+      </Field>
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton size="sm" pendingLabel="Recording…">
+          Return decision to Manager
+        </SubmitButton>
+        <ReviewMessage state={state} />
+      </div>
     </form>
   );
 }
