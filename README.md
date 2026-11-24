@@ -186,6 +186,28 @@ Deliberate decisions in this build:
 6. As Manager, assign the approved item to `supervisor@vetto.test`. Sign in as the Supervisor, add a secondary review, then triage a finding. Choosing **Dismissed** without a reason is rejected; with a reason it is saved and audited.
 7. Sign in as `admin@vetto.test` and open **Settings** for live readiness checks.
 
+### Demo brand and sample file library
+
+The demo seed provides three fictional brands with separate profiles, palettes, approved fonts, rules, logo assets, and campaign artwork:
+
+| Brand | Sample campaign upload | Sample brief |
+| --- | --- | --- |
+| Aurelia Coffee Roasters | `public/demo/aurelia-poster.png` | `public/demo/aurelia-brief.docx` |
+| Luma Field Botanicals | `public/demo/luma-field-botanicals-campaign.png` | `public/demo/luma-field-botanicals-brief.docx` |
+| Trailform Outdoor Co. | `public/demo/trailform-outdoor-campaign.png` | `public/demo/trailform-outdoor-brief.docx` |
+
+`public/demo/aurelia-offer.pdf` is also available for the PDF upload flow. Luma Field's brief intentionally includes unsupported skincare claims and omits its disclaimer; Trailform's brief includes an absolute weatherproofing claim. Upload each file against the matching brand to demonstrate rule findings and review. The additional campaign PNGs are designed demo artwork, not product photography.
+
+To add just the two new brands to an existing local database without resetting demo account passwords or rewriting Aurelia's profile, run this in PowerShell:
+
+```powershell
+$env:DEMO_BRANDS_ONLY = "true"
+npm run db:seed
+Remove-Item Env:DEMO_BRANDS_ONLY
+```
+
+This creates the new brand records and generated sample files. The normal seed still resets the demo accounts and Aurelia configuration; it now preserves an existing `public/demo/aurelia-brief.docx` instead of replacing it. To generate only the sample files without a database connection, set `DEMO_FILES_ONLY` instead.
+
 ## Routes
 
 | Route                          | Behaviour                                                        |
