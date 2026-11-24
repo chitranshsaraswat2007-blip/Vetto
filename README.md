@@ -129,14 +129,17 @@ The generated files are written to `.vetto-qa/fixtures/`, which is git-ignored s
 
 Public sign-up creates Creator accounts only. Admins can assign Supervisor, Manager, or Admin access from user management. The login page's role cards identify which account the user intends to use; the role is loaded from the authenticated database account.
 
-#### Judge Admin login
+#### Judge demo accounts
 
-Use these credentials to sign in as an Admin:
+Choose a role account for the judge walkthrough. All four seeded accounts use the same password:
 
-- **Email:** `admin@vetto.test`
-- **Password:** `fy2232b3rfhnf4u5h98fj4i5f3eewe5`
+- **Admin:** `admin@vetto.test`
+- **Manager:** `manager@vetto.test`
+- **Supervisor:** `supervisor@vetto.test`
+- **Creator:** `creator@vetto.test`
+- **Shared password:** `fy2232b3rfhnf4u5h98fj4i5f3eewe5`
 
-For the password to work, set Render's `SEED_PASSWORD` to this same value and seed the isolated judge database. This account has full workspace access; use it only for judging with fictional demo data.
+For these credentials to work, set Render's `SEED_PASSWORD` to this same value and seed the isolated judge database. Use these accounts only for judging with fictional demo data.
 
 **Security:** public registration cannot assign elevated roles. Use a separate demo database and storage bucket containing fictional/demo data; never use demo credentials for real customer data. For the seeded judge account, run the production seed with `VETTO_ALLOW_DEMO_SEED_IN_PRODUCTION=true` and a custom `SEED_PASSWORD` of at least 16 characters. Seeding resets demo accounts and brand configuration.
 

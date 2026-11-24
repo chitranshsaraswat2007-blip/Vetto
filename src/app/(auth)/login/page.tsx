@@ -95,17 +95,19 @@ export default function LoginPage() {
           <div className="entry-proof"><span>01</span><span>Brand memory</span><i /> <span>02</span><span>Human judgment</span></div>
           <aside className="mt-7 max-w-md rounded-xl border border-line bg-surface/70 p-4" aria-label="Judge demo login">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Demo use for judges</p>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div>
-                <dt className="text-[11px] text-ink-muted">Admin email</dt>
-                <dd className="font-medium text-ink">admin@vetto.test</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] text-ink-muted">Password</dt>
-                <dd className="break-all font-mono text-xs text-ink">fy2232b3rfhnf4u5h98fj4i5f3eewe5</dd>
-              </div>
+            <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              <dt className="text-[11px] text-ink-muted">Admin</dt>
+              <dd className="font-medium text-ink">admin@vetto.test</dd>
+              <dt className="text-[11px] text-ink-muted">Manager</dt>
+              <dd className="font-medium text-ink">manager@vetto.test</dd>
+              <dt className="text-[11px] text-ink-muted">Supervisor</dt>
+              <dd className="font-medium text-ink">supervisor@vetto.test</dd>
+              <dt className="text-[11px] text-ink-muted">Creator</dt>
+              <dd className="font-medium text-ink">creator@vetto.test</dd>
+              <dt className="col-span-2 mt-2 text-[11px] text-ink-muted">Shared password</dt>
+              <dd className="col-span-2 break-all font-mono text-xs text-ink">fy2232b3rfhnf4u5h98fj4i5f3eewe5</dd>
             </dl>
-            <p className="mt-3 text-[11px] leading-5 text-ink-muted">Shared demo account for evaluation only.</p>
+            <p className="mt-3 text-[11px] leading-5 text-ink-muted">One password works for all four demo accounts. For evaluation only.</p>
           </aside>
           <BrandMark href="/login" className="mt-auto hidden w-fit opacity-75 sm:block" />
         </div>
