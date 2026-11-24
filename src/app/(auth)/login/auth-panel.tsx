@@ -610,7 +610,7 @@ function SignUpForm() {
           className="mt-0.5 size-4 shrink-0 text-success"
         />
         <p className="text-[11px] leading-5 text-ink-soft">
-          Your account will be created with the selected role.
+          Public sign-up is limited to Creator access; an Admin assigns elevated roles.
         </p>
       </div>
 
